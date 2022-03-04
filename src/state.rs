@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use cosmwasm_std::{Addr, CanonicalAddr, Decimal, Uint128};
 use cw_storage_plus::{Item, Map};
 
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub denom: String,
@@ -20,7 +19,7 @@ pub const CONFIG: Item<Config> = Item::new("config");
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct BallsRange {
     pub min: u8,
-    pub max: u8
+    pub max: u8,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {

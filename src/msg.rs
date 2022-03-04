@@ -1,7 +1,7 @@
+use crate::state::BallsRange;
 use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::state::BallsRange;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -20,13 +20,17 @@ pub struct InstantiateMsg {
     pub bonus_range_max: u8,
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
-    pub multiplier: Vec<Decimal>
+    pub multiplier: Vec<Decimal>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Register { numbers: Vec<u8>, bonus: u8, address: Option<String> },
+    Register {
+        numbers: Vec<u8>,
+        bonus: u8,
+        address: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -35,7 +39,7 @@ pub enum QueryMsg {
     /// Get the config
     Config {},
     /// Get the state
-    State {}
+    State {},
 }
 
 // We define a custom struct for each query response
