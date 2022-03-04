@@ -27,7 +27,7 @@ pub struct InstantiateMsg {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     Register {
-        numbers: Vec<u8>,
+        numbers: Vec<Vec<u8>>,
         bonus: u8,
         address: Option<String>,
     },

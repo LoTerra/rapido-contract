@@ -1,9 +1,11 @@
+use std::cmp::Ordering;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128};
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Decimal};
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
+use crate::helpers::is_lower_hex;
 use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse};
 use crate::state::{BallsRange, Config, State, CONFIG, STATE};
 
@@ -76,7 +78,7 @@ pub fn try_register(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    numbers: Vec<u8>,
+    numbers: Vec<Vec<u8>>,
     bonus: u8,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
@@ -99,14 +101,51 @@ pub fn try_register(
         Some(address) => address
     };
 
-    let tiers = state.ticket_price.into_iter().filter(|tier| &sent == tier).collect::<Vec<Uint128>>();
+    let tiers = state.ticket_price.into_iter().filter(|tier| sent.u128() == tier.u128() * numbers.len() as u128).collect::<Vec<Uint128>>();
 
-    println!("{:?}", tiers);
+    // if tiers.is_empty() || tiers.len() > {
+    //     return Err(ContractError::ErrorTierDetermination{})
+    // };
+    //let multiplier = Decimal::from_ratio(tiers[0], Uint128::from(1_000_000u128));
 
+    // Get the multiplier
+    let multiplier = match u128::from(tiers[0]) {
+        1_000_000 => state.multiplier[0],
+        2_000_000 => state.multiplier[1],
+        5_000_000 => state.multiplier[2],
+        _ => {return Err(ContractError::ErrorTierDetermination{})}
+    };
 
-    if numbers.len() as u8 != state.set_of_balls {
-        return Err(ContractError::WrongSetOfBalls(state.set_of_balls))
+    // Check if duplicate numbers
+    for mut number in numbers.clone() {
+        number.sort();
+        number.dedup();
+        if number.len() as u8 != state.set_of_balls {
+            return Err(ContractError::DuplicateNotAllowed{})
+        }
     }
+
+
+
+    // println!("{}", multiplier);
+    // for combo in combination.clone() {
+    //     // Regex to check if the combination is allowed
+    //     if !is_lower_hex(&combo, state.combination_len) {
+    //         return Err(StdError::generic_err(format!(
+    //             "Not authorized use combination of [a-f] and [0-9] with length {}",
+    //             state.combination_len
+    //         )));
+    //     }
+    // }
+
+    for set_of_balls in numbers {
+        if set_of_balls.len() as u8 != state.set_of_balls {
+            return Err(ContractError::WrongSetOfBalls(state.set_of_balls))
+        }
+    }
+
+
+
 
     Ok(Response::new().add_attribute("method", "try_register"))
 }
@@ -214,12 +253,12 @@ mod tests {
         default_init(deps.as_mut());
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 10, 12, 15],
+            numbers: vec![vec![5, 7, 12, 15], vec![1, 2, 17, 6]],
             bonus: 1,
             address: None
         };
 
-        let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &[Coin{ denom: "uusd".to_string(), amount: Uint128::from(5_000_000u128) }]), msg).unwrap();
+        let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &[Coin{ denom: "uusd".to_string(), amount: Uint128::from(10_000_000u128) }]), msg).unwrap();
         println!("{:?}", res);
     }
 

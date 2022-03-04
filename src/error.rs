@@ -20,6 +20,12 @@ pub enum ContractError {
 
     #[error("Set of balls need to be {0}")]
     WrongSetOfBalls(u8),
+
+    #[error("Error determining the tier you are playing")]
+    ErrorTierDetermination {},
+
+    #[error("Duplicating numbers are not allowed")]
+    DuplicateNotAllowed {},
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }
