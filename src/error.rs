@@ -18,14 +18,11 @@ pub enum ContractError {
     #[error("Multiple tokens are not accepted")]
     MultipleDenoms {},
 
-    #[error("Set of balls need to be {0}")]
-    WrongSetOfBalls(u8),
+    #[error("Wrong set of balls or not allowed duplicated numbers")]
+    WrongSetOfBallsOrDuplicateNotAllowed {},
 
     #[error("Error determining the tier you are playing")]
     ErrorTierDetermination {},
-
-    #[error("Duplicating numbers are not allowed")]
-    DuplicateNotAllowed {},
 
     #[error("Register will be open soon")]
     RegisterClosed {},

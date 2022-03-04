@@ -44,6 +44,7 @@ pub const LOTTERY: Map<&[u8], Lottery> = Map::new("lottery");
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Game {
     pub number: Vec<u8>,
+    pub bonus: u8,
     pub multiplier: Decimal,
     pub resolved: bool,
 }

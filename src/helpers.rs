@@ -38,7 +38,8 @@ pub fn save_game(
                 &stats.to_be_bytes(),
             ),
             &Game {
-                number,
+                number: vec![number[0], number[1], number[2], number[3]],
+                bonus: number[4],
                 multiplier,
                 resolved: false,
             },

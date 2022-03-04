@@ -28,7 +28,6 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     Register {
         numbers: Vec<Vec<u8>>,
-        bonus: u8,
         address: Option<String>,
     },
 }
@@ -40,6 +39,15 @@ pub enum QueryMsg {
     Config {},
     /// Get the state
     State {},
+    /// Get all games from player at round x
+    Games {
+        start_after: Option<u64>,
+        limit: Option<u32>,
+        round: u64,
+        player: String,
+    },
+    // /// Get a game from player
+    // GameStats {round: u64, player: String}
 }
 
 // We define a custom struct for each query response
@@ -66,4 +74,13 @@ pub struct StateResponse {
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
     pub multiplier: Vec<Decimal>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct GameResponse {
+    pub number: Vec<u8>,
+    pub bonus: u8,
+    pub multiplier: Decimal,
+    pub resolved: bool,
+    pub game_id: u64,
 }

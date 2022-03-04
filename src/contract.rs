@@ -1,14 +1,20 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+    to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
+    Uint128,
 };
 use cw2::set_contract_version;
+use cw_storage_plus::Bound;
 use std::cmp::Ordering;
+use std::convert::TryInto;
+use std::ops::Deref;
 
 use crate::error::ContractError;
 use crate::helpers::{is_lower_hex, save_game};
-use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse};
+use crate::msg::{
+    ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
+};
 use crate::state::{BallsRange, Config, Game, GameStats, State, CONFIG, GAMES, GAMES_STATS, STATE};
 
 // version info for migration info
@@ -68,11 +74,9 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Register {
-            numbers,
-            bonus,
-            address,
-        } => try_register(deps, env, info, numbers, bonus, address),
+        ExecuteMsg::Register { numbers, address } => {
+            try_register(deps, env, info, numbers, address)
+        }
     }
 }
 
@@ -81,7 +85,6 @@ pub fn try_register(
     env: Env,
     info: MessageInfo,
     numbers: Vec<Vec<u8>>,
-    bonus: u8,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
@@ -128,17 +131,25 @@ pub fn try_register(
         }
     };
 
+    let mut new_number = vec![];
     // Check if duplicate numbers
     for mut number in numbers.clone() {
-        number.sort();
-        number.dedup();
-        if number.len() as u8 != state.set_of_balls {
-            return Err(ContractError::DuplicateNotAllowed {});
+        let mut new_arr = number.clone();
+        let bonus_number = number.last().unwrap();
+        // Handle the bonus number is in the range
+        if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
+            return Err(ContractError::BonusOutOfRange {});
         }
-    }
 
-    if bonus > state.bonus_range.max || bonus < state.bonus_range.min {
-        return Err(ContractError::BonusOutOfRange {});
+        new_arr.retain(|&x| &x != bonus_number);
+        new_arr.sort();
+        new_arr.dedup();
+
+        if new_arr.len() as u8 != state.set_of_balls {
+            return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+        }
+
+        new_number.push(new_arr);
     }
 
     match GAMES_STATS.may_load(
@@ -198,13 +209,15 @@ pub fn try_register(
     //     }
     // }
 
-    for set_of_balls in numbers {
-        if set_of_balls.len() as u8 != state.set_of_balls {
-            return Err(ContractError::WrongSetOfBalls(state.set_of_balls));
-        }
-    }
-
-    Ok(Response::new().add_attribute("method", "try_register"))
+    Ok(Response::new()
+        .add_attribute("method", "try_register")
+        .add_attribute("round", state.round.to_string())
+        .add_attribute("ticket_amount", numbers.len().to_string())
+        .add_attribute("sender", info.sender)
+        .add_attribute(
+            "recipient",
+            deps.api.addr_humanize(&address_raw)?.to_string(),
+        ))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -212,6 +225,12 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::State {} => to_binary(&query_state(deps)?),
+        QueryMsg::Games {
+            start_after,
+            limit,
+            round,
+            player,
+        } => to_binary(&query_games(deps, start_after, limit, round, player)?),
     }
 }
 
@@ -250,6 +269,39 @@ fn query_state(deps: Deps) -> StdResult<StateResponse> {
     })
 }
 
+const DEFAULT_LIMIT: u32 = 10;
+const MAX_LIMIT: u32 = 30;
+fn query_games(
+    deps: Deps,
+    start_after: Option<u64>,
+    limit: Option<u32>,
+    round: u64,
+    player: String,
+) -> StdResult<Vec<GameResponse>> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let start = start_after.map(|d| Bound::Exclusive(d.to_be_bytes().to_vec()));
+
+    let owner_addr = deps.api.addr_validate(&player)?;
+    let raw_address = deps.api.addr_canonicalize(&owner_addr.as_str())?;
+    let games = GAMES
+        .prefix((&round.to_be_bytes(), raw_address.as_slice()))
+        .range(deps.storage, None, start, Order::Descending)
+        .take(limit)
+        .map(|pair| {
+            pair.and_then(|(k, game)| {
+                Ok(GameResponse {
+                    number: game.number,
+                    bonus: game.bonus,
+                    multiplier: game.multiplier,
+                    resolved: game.resolved,
+                    game_id: u64::from_be_bytes(k.try_into().unwrap()),
+                })
+            })
+        })
+        .collect::<StdResult<Vec<GameResponse>>>()?;
+
+    Ok(games)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,8 +362,7 @@ mod tests {
         default_init(deps.as_mut());
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 12, 15], vec![1, 2, 17, 6]],
-            bonus: 1,
+            numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 2]],
             address: None,
         };
         let sender = mock_info(
@@ -332,27 +383,44 @@ mod tests {
 
         // Error duplicated numbers
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 5, 15], vec![1, 2, 17, 1]],
-            bonus: 1,
+            numbers: vec![vec![5, 7, 5, 15, 2], vec![1, 2, 17, 1, 3]],
             address: None,
         };
         let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
-        assert_eq!(err, ContractError::DuplicateNotAllowed {});
+        assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Error bonus out of range
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 1, 15], vec![1, 2, 17, 5]],
-            bonus: 10,
+            numbers: vec![vec![5, 7, 1, 15, 10], vec![1, 2, 17, 5, 0]],
             address: None,
         };
         let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 1, 15], vec![1, 2, 17, 5]],
-            bonus: 0,
+            numbers: vec![vec![5, 7, 1, 15, 4], vec![1, 2, 17, 5, 0]],
+
             address: None,
         };
         let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
+
+        // Wrong set of balls
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 7, 1, 15, 4, 4], vec![1, 2, 17, 5, 1]],
+            address: None,
+        };
+        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+
+        // Success
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 4]],
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+        println!("{:?}", res);
+
+        let games = query_games(deps.as_ref(), None, None, 0, "alice".to_string()).unwrap();
+        println!("{:?}", games)
     }
 }
