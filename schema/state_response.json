@@ -1,21 +1,16 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "InstantiateMsg",
+  "title": "StateResponse",
   "type": "object",
   "required": [
     "bonus_range_max",
     "bonus_range_min",
     "bonus_set_of_balls",
-    "denom",
-    "fee_collector",
-    "fee_collector_address",
-    "fee_collector_drand",
-    "fee_collector_drand_address",
-    "frequency",
     "multiplier",
     "prize_rank",
     "range_max",
     "range_min",
+    "round",
     "set_of_balls",
     "start_time",
     "ticket_price"
@@ -34,26 +29,6 @@
     "bonus_set_of_balls": {
       "type": "integer",
       "format": "uint8",
-      "minimum": 0.0
-    },
-    "denom": {
-      "type": "string"
-    },
-    "fee_collector": {
-      "$ref": "#/definitions/Decimal"
-    },
-    "fee_collector_address": {
-      "type": "string"
-    },
-    "fee_collector_drand": {
-      "$ref": "#/definitions/Decimal"
-    },
-    "fee_collector_drand_address": {
-      "type": "string"
-    },
-    "frequency": {
-      "type": "integer",
-      "format": "uint64",
       "minimum": 0.0
     },
     "multiplier": {
@@ -76,6 +51,11 @@
     "range_min": {
       "type": "integer",
       "format": "uint8",
+      "minimum": 0.0
+    },
+    "round": {
+      "type": "integer",
+      "format": "uint64",
       "minimum": 0.0
     },
     "set_of_balls": {

@@ -198,17 +198,6 @@ pub fn try_register(
         }
     }
 
-    // println!("{}", multiplier);
-    // for combo in combination.clone() {
-    //     // Regex to check if the combination is allowed
-    //     if !is_lower_hex(&combo, state.combination_len) {
-    //         return Err(StdError::generic_err(format!(
-    //             "Not authorized use combination of [a-f] and [0-9] with length {}",
-    //             state.combination_len
-    //         )));
-    //     }
-    // }
-
     Ok(Response::new()
         .add_attribute("method", "try_register")
         .add_attribute("round", state.round.to_string())
@@ -306,7 +295,7 @@ fn query_games(
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary, Coin, Decimal, Uint128};
+    use cosmwasm_std::{coins, from_binary, Attribute, Coin, Decimal, Uint128};
     use std::str::FromStr;
 
     fn default_init(deps: DepsMut) {
@@ -418,9 +407,36 @@ mod tests {
             address: None,
         };
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
-        println!("{:?}", res);
+        assert_eq!(
+            res.attributes,
+            vec![
+                Attribute::new("method", "try_register"),
+                Attribute::new("round", "0"),
+                Attribute::new("ticket_amount", "2"),
+                Attribute::new("sender", "alice"),
+                Attribute::new("recipient", "alice"),
+            ]
+        );
 
         let games = query_games(deps.as_ref(), None, None, 0, "alice".to_string()).unwrap();
-        println!("{:?}", games)
+        assert_eq!(
+            games,
+            vec![
+                GameResponse {
+                    number: vec![1, 2, 17, 6],
+                    bonus: 4,
+                    multiplier: Decimal::from_str("5").unwrap(),
+                    resolved: false,
+                    game_id: 1
+                },
+                GameResponse {
+                    number: vec![5, 7, 12, 15],
+                    bonus: 1,
+                    multiplier: Decimal::from_str("5").unwrap(),
+                    resolved: false,
+                    game_id: 0
+                }
+            ]
+        );
     }
 }

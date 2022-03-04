@@ -5,30 +5,31 @@
     {
       "type": "object",
       "required": [
-        "increment"
+        "register"
       ],
       "properties": {
-        "increment": {
-          "type": "object"
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "reset"
-      ],
-      "properties": {
-        "reset": {
+        "register": {
           "type": "object",
           "required": [
-            "count"
+            "numbers"
           ],
           "properties": {
-            "count": {
-              "type": "integer",
-              "format": "int32"
+            "address": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "numbers": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                }
+              }
             }
           }
         }
