@@ -22,7 +22,7 @@ pub struct BallsRange {
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
-    pub start_time: u64,
+    pub draw_time: u64,
     pub round: u64,
     pub set_of_balls: u8,
     pub range: BallsRange,
@@ -40,3 +40,18 @@ pub struct Lottery {
     pub counter_player: u64,
 }
 pub const LOTTERY: Map<&[u8], Lottery> = Map::new("lottery");
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct Game {
+    pub number: Vec<u8>,
+    pub multiplier: Decimal,
+    pub resolved: bool,
+}
+pub const GAMES: Map<(&[u8], &[u8], &[u8]), Game> = Map::new("games");
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct GameStats {
+    pub total_ticket: u64,
+    pub total_spent: Uint128,
+}
+pub const GAMES_STATS: Map<(&[u8], &[u8]), GameStats> = Map::new("games_stats");

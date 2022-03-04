@@ -1,13 +1,15 @@
-use std::cmp::Ordering;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128, Decimal};
+use cosmwasm_std::{
+    to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+};
 use cw2::set_contract_version;
+use std::cmp::Ordering;
 
 use crate::error::ContractError;
-use crate::helpers::is_lower_hex;
+use crate::helpers::{is_lower_hex, save_game};
 use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse};
-use crate::state::{BallsRange, Config, State, CONFIG, STATE};
+use crate::state::{BallsRange, Config, Game, GameStats, State, CONFIG, GAMES, GAMES_STATS, STATE};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
@@ -32,7 +34,7 @@ pub fn instantiate(
     };
 
     let state = State {
-        start_time: msg.start_time,
+        draw_time: msg.start_time,
         round: 0,
         set_of_balls: msg.set_of_balls,
         range: BallsRange {
@@ -85,8 +87,8 @@ pub fn try_register(
     let state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
-    if state.start_time < env.block.time.seconds() {
-        return Err(ContractError::RegisterClosed{});
+    if state.draw_time < env.block.time.seconds() {
+        return Err(ContractError::RegisterClosed {});
     }
 
     let sent = match info.funds.len() {
@@ -100,12 +102,16 @@ pub fn try_register(
         _ => Err(ContractError::MultipleDenoms {}),
     }?;
 
-    let sender = match address {
-        None => info.sender.to_string(),
-        Some(address) => address
+    let address_raw = match address {
+        None => deps.api.addr_canonicalize(&info.sender.as_str())?,
+        Some(address) => deps.api.addr_canonicalize(&address)?,
     };
 
-    let tiers = state.ticket_price.into_iter().filter(|tier| sent.u128() == tier.u128() * numbers.len() as u128).collect::<Vec<Uint128>>();
+    let tiers = state
+        .ticket_price
+        .into_iter()
+        .filter(|tier| sent.u128() == tier.u128() * numbers.len() as u128)
+        .collect::<Vec<Uint128>>();
 
     // if tiers.is_empty() || tiers.len() > {
     //     return Err(ContractError::ErrorTierDetermination{})
@@ -117,7 +123,9 @@ pub fn try_register(
         1_000_000 => state.multiplier[0],
         2_000_000 => state.multiplier[1],
         5_000_000 => state.multiplier[2],
-        _ => {return Err(ContractError::ErrorTierDetermination{});}
+        _ => {
+            return Err(ContractError::ErrorTierDetermination {});
+        }
     };
 
     // Check if duplicate numbers
@@ -125,15 +133,59 @@ pub fn try_register(
         number.sort();
         number.dedup();
         if number.len() as u8 != state.set_of_balls {
-            return Err(ContractError::DuplicateNotAllowed{});
+            return Err(ContractError::DuplicateNotAllowed {});
         }
     }
 
     if bonus > state.bonus_range.max || bonus < state.bonus_range.min {
-        return Err(ContractError::BonusOutOfRange{});
+        return Err(ContractError::BonusOutOfRange {});
     }
 
+    match GAMES_STATS.may_load(
+        deps.storage,
+        (&state.round.to_be_bytes(), &address_raw.as_slice()),
+    )? {
+        None => {
+            save_game(
+                deps.storage,
+                state.round,
+                &address_raw,
+                numbers.clone(),
+                multiplier,
+                None,
+            )?;
+            GAMES_STATS.save(
+                deps.storage,
+                (&state.round.to_be_bytes(), &address_raw.as_slice()),
+                &GameStats {
+                    total_ticket: numbers.len() as u64,
+                    total_spent: sent,
+                },
+            )?;
+        }
+        Some(game_stats) => {
+            save_game(
+                deps.storage,
+                state.round,
+                &address_raw,
+                numbers.clone(),
+                multiplier,
+                Some(game_stats),
+            )?;
 
+            GAMES_STATS.update(
+                deps.storage,
+                (&state.round.to_be_bytes(), &address_raw.as_slice()),
+                |game_stats| -> Result<_, ContractError> {
+                    let mut update_game_stats = game_stats.unwrap();
+                    update_game_stats.total_spent =
+                        update_game_stats.total_spent.checked_add(sent).unwrap();
+                    update_game_stats.total_ticket += numbers.len() as u64;
+                    Ok(update_game_stats)
+                },
+            )?;
+        }
+    }
 
     // println!("{}", multiplier);
     // for combo in combination.clone() {
@@ -148,12 +200,9 @@ pub fn try_register(
 
     for set_of_balls in numbers {
         if set_of_balls.len() as u8 != state.set_of_balls {
-            return Err(ContractError::WrongSetOfBalls(state.set_of_balls))
+            return Err(ContractError::WrongSetOfBalls(state.set_of_balls));
         }
     }
-
-
-
 
     Ok(Response::new().add_attribute("method", "try_register"))
 }
@@ -187,7 +236,7 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
     Ok(StateResponse {
-        start_time: state.start_time,
+        start_time: state.draw_time,
         round: state.round,
         set_of_balls: state.set_of_balls,
         range_min: state.range.min,
@@ -205,7 +254,7 @@ fn query_state(deps: Deps) -> StdResult<StateResponse> {
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary, Decimal, Uint128, Coin};
+    use cosmwasm_std::{coins, from_binary, Coin, Decimal, Uint128};
     use std::str::FromStr;
 
     fn default_init(deps: DepsMut) {
@@ -263,11 +312,47 @@ mod tests {
         let msg = ExecuteMsg::Register {
             numbers: vec![vec![5, 7, 12, 15], vec![1, 2, 17, 6]],
             bonus: 1,
-            address: None
+            address: None,
         };
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(10_000_000u128),
+            }],
+        );
 
-        let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &[Coin{ denom: "uusd".to_string(), amount: Uint128::from(10_000_000u128) }]), msg).unwrap();
-        println!("{:?}", res);
+        // Error time not started yet
+        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::RegisterClosed {});
+
+        let mut state = STATE.load(deps.as_mut().storage).unwrap();
+        state.draw_time = mock_env().block.time.plus_seconds(300).seconds();
+        STATE.save(deps.as_mut().storage, &state).unwrap();
+
+        // Error duplicated numbers
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 7, 5, 15], vec![1, 2, 17, 1]],
+            bonus: 1,
+            address: None,
+        };
+        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::DuplicateNotAllowed {});
+
+        // Error bonus out of range
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 7, 1, 15], vec![1, 2, 17, 5]],
+            bonus: 10,
+            address: None,
+        };
+        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::BonusOutOfRange {});
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 7, 1, 15], vec![1, 2, 17, 5]],
+            bonus: 0,
+            address: None,
+        };
+        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::BonusOutOfRange {});
     }
-
 }
