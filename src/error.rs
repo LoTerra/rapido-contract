@@ -26,6 +26,12 @@ pub enum ContractError {
 
     #[error("Duplicating numbers are not allowed")]
     DuplicateNotAllowed {},
+
+    #[error("Register will be open soon")]
+    RegisterClosed {},
+
+    #[error("Bonus number is out of range")]
+    BonusOutOfRange {},
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }

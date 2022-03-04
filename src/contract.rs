@@ -22,7 +22,6 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     let config = Config {
         denom: msg.denom,
-        start_time: msg.start_time,
         frequency: msg.frequency,
         fee_collector: msg.fee_collector,
         fee_collector_address: deps.api.addr_canonicalize(&msg.fee_collector_address)?,
@@ -33,6 +32,7 @@ pub fn instantiate(
     };
 
     let state = State {
+        start_time: msg.start_time,
         round: 0,
         set_of_balls: msg.set_of_balls,
         range: BallsRange {
@@ -85,6 +85,10 @@ pub fn try_register(
     let state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
+    if state.start_time < env.block.time.seconds() {
+        return Err(ContractError::RegisterClosed{});
+    }
+
     let sent = match info.funds.len() {
         0 => Err(ContractError::EmptyFunds {}),
         1 => {
@@ -113,7 +117,7 @@ pub fn try_register(
         1_000_000 => state.multiplier[0],
         2_000_000 => state.multiplier[1],
         5_000_000 => state.multiplier[2],
-        _ => {return Err(ContractError::ErrorTierDetermination{})}
+        _ => {return Err(ContractError::ErrorTierDetermination{});}
     };
 
     // Check if duplicate numbers
@@ -121,8 +125,12 @@ pub fn try_register(
         number.sort();
         number.dedup();
         if number.len() as u8 != state.set_of_balls {
-            return Err(ContractError::DuplicateNotAllowed{})
+            return Err(ContractError::DuplicateNotAllowed{});
         }
+    }
+
+    if bonus > state.bonus_range.max || bonus < state.bonus_range.min {
+        return Err(ContractError::BonusOutOfRange{});
     }
 
 
@@ -162,7 +170,6 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
     Ok(ConfigResponse {
         denom: config.denom,
-        start_time: config.start_time,
         frequency: config.frequency,
         fee_collector: config.fee_collector,
         fee_collector_address: deps
@@ -180,6 +187,7 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
     Ok(StateResponse {
+        start_time: state.start_time,
         round: state.round,
         set_of_balls: state.set_of_balls,
         range_min: state.range.min,

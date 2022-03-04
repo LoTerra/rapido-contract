@@ -46,7 +46,6 @@ pub enum QueryMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
     pub denom: String,
-    pub start_time: u64,
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: String,
@@ -56,6 +55,7 @@ pub struct ConfigResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StateResponse {
+    pub start_time: u64,
     pub round: u64,
     pub set_of_balls: u8,
     pub range_min: u8,

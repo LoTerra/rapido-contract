@@ -7,7 +7,6 @@ use cw_storage_plus::{Item, Map};
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub denom: String,
-    pub start_time: u64,
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: CanonicalAddr,
@@ -23,6 +22,7 @@ pub struct BallsRange {
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
+    pub start_time: u64,
     pub round: u64,
     pub set_of_balls: u8,
     pub range: BallsRange,
