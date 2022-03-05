@@ -5,7 +5,6 @@
   "required": [
     "bonus_range",
     "bonus_set_of_balls",
-    "draw_time",
     "multiplier",
     "prize_rank",
     "range",
@@ -20,11 +19,6 @@
     "bonus_set_of_balls": {
       "type": "integer",
       "format": "uint8",
-      "minimum": 0.0
-    },
-    "draw_time": {
-      "type": "integer",
-      "format": "uint64",
       "minimum": 0.0
     },
     "multiplier": {

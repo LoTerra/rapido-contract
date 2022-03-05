@@ -2,29 +2,35 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
-    Uint128,
+    Uint128, WasmQuery,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::cmp::Ordering;
 use std::convert::TryInto;
-use std::ops::Deref;
 
 use crate::error::ContractError;
 use crate::helpers::{is_lower_hex, save_game};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
-use crate::state::{BallsRange, Config, Game, GameStats, State, CONFIG, GAMES, GAMES_STATS, STATE};
+use crate::state::{
+    BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS,
+    LOTTERY_STATE, STATE,
+};
+use terrand;
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const DRAND_GENESIS_TIME: u64 = 1595431050;
+const DRAND_PERIOD: u64 = 30;
+const DRAND_NEXT_ROUND_SECURITY: u64 = 2;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
@@ -34,13 +40,10 @@ pub fn instantiate(
         fee_collector: msg.fee_collector,
         fee_collector_address: deps.api.addr_canonicalize(&msg.fee_collector_address)?,
         fee_collector_drand: msg.fee_collector_drand,
-        fee_collector_drand_address: deps
-            .api
-            .addr_canonicalize(&msg.fee_collector_drand_address)?,
+        drand_address: deps.api.addr_canonicalize(&msg.drand_address)?,
     };
 
     let state = State {
-        draw_time: msg.start_time,
         round: 0,
         set_of_balls: msg.set_of_balls,
         range: BallsRange {
@@ -52,14 +55,32 @@ pub fn instantiate(
             min: msg.bonus_range_min,
             max: msg.bonus_range_max,
         },
-        prize_rank: msg.prize_rank,
-        ticket_price: msg.ticket_price,
-        multiplier: msg.multiplier,
+        prize_rank: msg.prize_rank.clone(),
+        ticket_price: msg.ticket_price.clone(),
+        multiplier: msg.multiplier.clone(),
     };
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     STATE.save(deps.storage, &state)?;
     CONFIG.save(deps.storage, &config)?;
+
+    // calculate next round randomness from now
+    let draw_time = env.block.time.plus_seconds(config.frequency).seconds();
+    let from_genesis = draw_time - DRAND_GENESIS_TIME;
+    let next_round = (from_genesis / DRAND_PERIOD) + DRAND_NEXT_ROUND_SECURITY;
+
+    LOTTERY_STATE.save(
+        deps.storage,
+        &state.round.to_be_bytes(),
+        &LotteryState {
+            draw_time,
+            terrand_round: next_round,
+            prize_rank: msg.prize_rank,
+            ticket_price: msg.ticket_price,
+            counter_player: 0,
+            multiplier: msg.multiplier,
+        },
+    )?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -77,6 +98,7 @@ pub fn execute(
         ExecuteMsg::Register { numbers, address } => {
             try_register(deps, env, info, numbers, address)
         }
+        ExecuteMsg::Draw {} => try_draw(deps, env, info),
     }
 }
 
@@ -89,8 +111,9 @@ pub fn try_register(
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
+    let lottery = LOTTERY_STATE.load(deps.storage, &state.round.to_be_bytes())?;
 
-    if state.draw_time < env.block.time.seconds() {
+    if lottery.draw_time < env.block.time.seconds() {
         return Err(ContractError::RegisterClosed {});
     }
 
@@ -110,7 +133,7 @@ pub fn try_register(
         Some(address) => deps.api.addr_canonicalize(&address)?,
     };
 
-    let tiers = state
+    let tiers = lottery
         .ticket_price
         .into_iter()
         .filter(|tier| sent.u128() == tier.u128() * numbers.len() as u128)
@@ -123,9 +146,9 @@ pub fn try_register(
 
     // Get the multiplier
     let multiplier = match u128::from(tiers[0]) {
-        1_000_000 => state.multiplier[0],
-        2_000_000 => state.multiplier[1],
-        5_000_000 => state.multiplier[2],
+        1_000_000 => lottery.multiplier[0],
+        2_000_000 => lottery.multiplier[1],
+        5_000_000 => lottery.multiplier[2],
         _ => {
             return Err(ContractError::ErrorTierDetermination {});
         }
@@ -209,6 +232,30 @@ pub fn try_register(
         ))
 }
 
+pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
+    let lottery = LOTTERY_STATE.load(deps.storage, &state.round.to_be_bytes())?;
+
+    if lottery.draw_time > env.block.time.seconds() {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    // Query terrand for the randomness
+    let msg = terrand::msg::QueryMsg::GetRandomness {
+        round: lottery.terrand_round,
+    };
+    let terrand_human = deps.api.addr_humanize(&config.drand_address)?;
+    let query = WasmQuery::Smart {
+        contract_addr: terrand_human.to_string(),
+        msg: to_binary(&msg)?,
+    };
+    let terrand_randomness: terrand::msg::GetRandomResponse = deps.querier.query(&query.into())?;
+    let randomness_hash: String = hex::encode(terrand_randomness.randomness.as_slice());
+
+    Ok(Response::default())
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -234,17 +281,13 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
             .addr_humanize(&config.fee_collector_address)?
             .to_string(),
         fee_collector_drand: config.fee_collector_drand,
-        fee_collector_drand_address: deps
-            .api
-            .addr_humanize(&config.fee_collector_drand_address)?
-            .to_string(),
+        fee_collector_drand_address: deps.api.addr_humanize(&config.drand_address)?.to_string(),
     })
 }
 
 fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
     Ok(StateResponse {
-        start_time: state.draw_time,
         round: state.round,
         set_of_balls: state.set_of_balls,
         range_min: state.range.min,
@@ -294,19 +337,20 @@ fn query_games(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mock_querier::custom_mock_dependencies;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary, Attribute, Coin, Decimal, Uint128};
+    use cosmwasm_std::{coins, from_binary, Attribute, Coin, Decimal, Timestamp, Uint128};
     use std::str::FromStr;
 
     fn default_init(deps: DepsMut) {
         let msg = InstantiateMsg {
             denom: "uusd".to_string(),
-            start_time: 0,
+            draw_time: 0,
             frequency: 300,
             fee_collector: Decimal::from_str("0.05").unwrap(),
             fee_collector_address: "STAKING".to_string(),
             fee_collector_drand: Decimal::from_str("0.01").unwrap(),
-            fee_collector_drand_address: "TERRAND".to_string(),
+            drand_address: "TERRAND".to_string(),
             set_of_balls: 4,
             range_min: 1,
             range_max: 17,
@@ -335,7 +379,9 @@ mod tests {
             ],
         };
 
-        let res = instantiate(deps, mock_env(), mock_info("creator", &[]), msg).unwrap();
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
+        let res = instantiate(deps, env, mock_info("creator", &[]), msg).unwrap();
         assert_eq!(0, res.messages.len());
     }
 
@@ -361,21 +407,22 @@ mod tests {
                 amount: Uint128::from(10_000_000u128),
             }],
         );
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME).plus_seconds(301);
 
         // Error time not started yet
-        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        let err = execute(deps.as_mut(), env, sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::RegisterClosed {});
 
-        let mut state = STATE.load(deps.as_mut().storage).unwrap();
-        state.draw_time = mock_env().block.time.plus_seconds(300).seconds();
-        STATE.save(deps.as_mut().storage, &state).unwrap();
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
 
         // Error duplicated numbers
         let msg = ExecuteMsg::Register {
             numbers: vec![vec![5, 7, 5, 15, 2], vec![1, 2, 17, 1, 3]],
             address: None,
         };
-        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Error bonus out of range
@@ -383,14 +430,14 @@ mod tests {
             numbers: vec![vec![5, 7, 1, 15, 10], vec![1, 2, 17, 5, 0]],
             address: None,
         };
-        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
         let msg = ExecuteMsg::Register {
             numbers: vec![vec![5, 7, 1, 15, 4], vec![1, 2, 17, 5, 0]],
 
             address: None,
         };
-        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
 
         // Wrong set of balls
@@ -398,7 +445,7 @@ mod tests {
             numbers: vec![vec![5, 7, 1, 15, 4, 4], vec![1, 2, 17, 5, 1]],
             address: None,
         };
-        let err = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap_err();
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Success
@@ -406,7 +453,7 @@ mod tests {
             numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 4]],
             address: None,
         };
-        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+        let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
         assert_eq!(
             res.attributes,
             vec![
@@ -438,5 +485,30 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn try_draw() {
+        let mut deps = custom_mock_dependencies(&[]);
+        default_init(deps.as_mut());
+
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 2]],
+            address: None,
+        };
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(10_000_000u128),
+            }],
+        );
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
+        env.block.time = env.block.time.plus_seconds(300);
+        let msg = ExecuteMsg::Draw {};
+
+        let res = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap();
+        println!("{:?}", res);
     }
 }

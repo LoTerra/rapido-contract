@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub denom: String,
-    pub start_time: u64,
+    pub draw_time: u64,
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: String,
     pub fee_collector_drand: Decimal,
-    pub fee_collector_drand_address: String,
+    pub drand_address: String,
     pub set_of_balls: u8,
     pub range_min: u8,
     pub range_max: u8,
@@ -30,6 +30,7 @@ pub enum ExecuteMsg {
         numbers: Vec<Vec<u8>>,
         address: Option<String>,
     },
+    Draw {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -63,7 +64,6 @@ pub struct ConfigResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StateResponse {
-    pub start_time: u64,
     pub round: u64,
     pub set_of_balls: u8,
     pub range_min: u8,

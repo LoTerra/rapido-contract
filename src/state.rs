@@ -11,7 +11,7 @@ pub struct Config {
     pub fee_collector: Decimal,
     pub fee_collector_address: CanonicalAddr,
     pub fee_collector_drand: Decimal,
-    pub fee_collector_drand_address: CanonicalAddr,
+    pub drand_address: CanonicalAddr,
 }
 pub const CONFIG: Item<Config> = Item::new("config");
 
@@ -22,7 +22,6 @@ pub struct BallsRange {
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
-    pub draw_time: u64,
     pub round: u64,
     pub set_of_balls: u8,
     pub range: BallsRange,
@@ -35,11 +34,15 @@ pub struct State {
 pub const STATE: Item<State> = Item::new("state");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct Lottery {
-    pub jackpot: Uint128,
+pub struct LotteryState {
+    pub draw_time: u64,
+    pub terrand_round: u64,
+    pub prize_rank: Vec<Uint128>,
+    pub ticket_price: Vec<Uint128>,
     pub counter_player: u64,
+    pub multiplier: Vec<Decimal>,
 }
-pub const LOTTERY: Map<&[u8], Lottery> = Map::new("lottery");
+pub const LOTTERY_STATE: Map<&[u8], LotteryState> = Map::new("lottery_state");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Game {

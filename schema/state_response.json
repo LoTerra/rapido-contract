@@ -12,7 +12,6 @@
     "range_min",
     "round",
     "set_of_balls",
-    "start_time",
     "ticket_price"
   ],
   "properties": {
@@ -61,11 +60,6 @@
     "set_of_balls": {
       "type": "integer",
       "format": "uint8",
-      "minimum": 0.0
-    },
-    "start_time": {
-      "type": "integer",
-      "format": "uint64",
       "minimum": 0.0
     },
     "ticket_price": {
