@@ -16,7 +16,7 @@ pub fn is_lower_hex(combination: &str, len: u8) -> bool {
     true
 }
 
-pub fn bonus_number(number: &char) -> Result<u8, ContractError>  {
+pub fn bonus_number(number: &char) -> Result<u8, ContractError> {
     let bonus_number = match number {
         '0' => 1u8,
         '1' => 1u8,
@@ -34,14 +34,13 @@ pub fn bonus_number(number: &char) -> Result<u8, ContractError>  {
         'd' => 3u8,
         'e' => 4u8,
         'f' => 4u8,
-        _ => {return Err(ContractError::Unauthorized {})}
+        _ => return Err(ContractError::Unauthorized {}),
     };
 
     Ok(bonus_number)
 }
 
-pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError>  {
-
+pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
     let mut winning_number: Vec<u8> = vec![];
     for n in number {
         let number = match n {
@@ -61,7 +60,7 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError>  {
             'e' => 14u8,
             'f' => 15u8,
             '0' => 16u8,
-            _ => {return Err(ContractError::Unauthorized {})}
+            _ => return Err(ContractError::Unauthorized {}),
         };
 
         if !winning_number.contains(&number) && winning_number.len() != 4 {

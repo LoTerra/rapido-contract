@@ -39,8 +39,10 @@ pub struct LotteryState {
     pub terrand_round: u64,
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
-    pub counter_player: u64,
+    pub counter_player: Option<u64>,
     pub multiplier: Vec<Decimal>,
+    pub winning_number: Option<Vec<u8>>,
+    pub bonus_number: Option<u8>,
 }
 pub const LOTTERY_STATE: Map<&[u8], LotteryState> = Map::new("lottery_state");
 

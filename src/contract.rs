@@ -77,8 +77,10 @@ pub fn instantiate(
             terrand_round: next_round,
             prize_rank: msg.prize_rank,
             ticket_price: msg.ticket_price,
-            counter_player: 0,
+            counter_player: None,
             multiplier: msg.multiplier,
+            winning_number: None,
+            bonus_number: None,
         },
     )?;
 
@@ -233,7 +235,7 @@ pub fn try_register(
 }
 
 pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
     let lottery = LOTTERY_STATE.load(deps.storage, &state.round.to_be_bytes())?;
 
@@ -253,18 +255,50 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
     let terrand_randomness: terrand::msg::GetRandomResponse = deps.querier.query(&query.into())?;
     let randomness_hash: String = hex::encode(terrand_randomness.randomness.as_slice());
 
-
     let numbers: Vec<_> = randomness_hash.chars().collect();
     let winning_number = winning_number(numbers.clone())?;
     let bonus_number = bonus_number(numbers.last().unwrap())?;
 
+    // Update lottery winning and bonus number
+    LOTTERY_STATE.update(
+        deps.storage,
+        &state.round.to_be_bytes(),
+        |lottery_state| -> Result<_, ContractError> {
+            let mut update_lottery_state = lottery_state.unwrap();
+            update_lottery_state.winning_number = Some(winning_number);
+            update_lottery_state.bonus_number = Some(bonus_number);
+            Ok(update_lottery_state)
+        },
+    )?;
 
+    // Update state & save
+    state.round += 1;
+    STATE.save(deps.storage, &state)?;
 
-    println!("{:?}", bonus_number);
-    println!("{:?}", winning_number);
-    println!("{:?}", numbers);
+    // calculate next round randomness from now
+    let draw_time = env.block.time.plus_seconds(config.frequency).seconds();
+    let from_genesis = draw_time - DRAND_GENESIS_TIME;
+    let next_round = (from_genesis / DRAND_PERIOD) + DRAND_NEXT_ROUND_SECURITY;
 
+    // Create new lottery
+    LOTTERY_STATE.save(
+        deps.storage,
+        &state.round.to_be_bytes(),
+        &LotteryState {
+            draw_time,
+            terrand_round: next_round,
+            prize_rank: state.prize_rank,
+            ticket_price: state.ticket_price,
+            counter_player: None,
+            multiplier: state.multiplier,
+            winning_number: None,
+            bonus_number: None,
+        },
+    )?;
 
+    // println!("{:?}", bonus_number);
+    // println!("{:?}", winning_number);
+    // println!("{:?}", numbers);
 
     Ok(Response::default())
 }
