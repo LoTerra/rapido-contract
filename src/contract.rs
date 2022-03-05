@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::convert::TryInto;
 
 use crate::error::ContractError;
-use crate::helpers::{is_lower_hex, save_game};
+use crate::helpers::{bonus_number, is_lower_hex, save_game, winning_number};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
@@ -252,6 +252,19 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
     };
     let terrand_randomness: terrand::msg::GetRandomResponse = deps.querier.query(&query.into())?;
     let randomness_hash: String = hex::encode(terrand_randomness.randomness.as_slice());
+
+
+    let numbers: Vec<_> = randomness_hash.chars().collect();
+    let winning_number = winning_number(numbers.clone())?;
+    let bonus_number = bonus_number(numbers.last().unwrap())?;
+
+
+
+    println!("{:?}", bonus_number);
+    println!("{:?}", winning_number);
+    println!("{:?}", numbers);
+
+
 
     Ok(Response::default())
 }
