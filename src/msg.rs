@@ -31,6 +31,7 @@ pub enum ExecuteMsg {
         address: Option<String>,
     },
     Draw {},
+    Collect { round: u64, player: String, game_id: Vec<u64>}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -47,6 +48,8 @@ pub enum QueryMsg {
         round: u64,
         player: String,
     },
+    /// Query jackpot
+    LotteryState { round: u64 },
     // /// Get a game from player
     // GameStats {round: u64, player: String}
 }

@@ -1,9 +1,6 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
-    Uint128, WasmQuery,
-};
+use cosmwasm_std::{to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128, WasmQuery, Addr};
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::cmp::Ordering;
@@ -101,6 +98,7 @@ pub fn execute(
             try_register(deps, env, info, numbers, address)
         }
         ExecuteMsg::Draw {} => try_draw(deps, env, info),
+        ExecuteMsg::Collect {round, player, game_id} => try_collect(deps, env, info, round, player, game_id)
     }
 }
 
@@ -240,7 +238,7 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
     let lottery = LOTTERY_STATE.load(deps.storage, &state.round.to_be_bytes())?;
 
     if lottery.draw_time > env.block.time.seconds() {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::LotteryInProgress {});
     }
 
     // Query terrand for the randomness
@@ -296,9 +294,22 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
         },
     )?;
 
-    // println!("{:?}", bonus_number);
-    // println!("{:?}", winning_number);
-    // println!("{:?}", numbers);
+    Ok(Response::new()
+        .add_attribute("method", "try_draw")
+        .add_attribute("round", state.round.checked_sub(1).unwrap().to_string()))
+}
+
+pub fn try_collect(deps: DepsMut, env: Env, info: MessageInfo, round: u64, player: String, game_id: Vec<u64>) -> Result<Response, ContractError>{
+    let player_raw = deps.api.addr_canonicalize(&Addr::unchecked(player).as_str())?;
+    let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
+    for id in game_id {
+        let game = GAMES.load(deps.storage, (&round.to_be_bytes(), &player_raw.as_slice(), &id.to_be_bytes()))?;
+        if !game.resolved{
+
+        }
+    };
+
+
 
     Ok(Response::default())
 }
@@ -314,6 +325,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             round,
             player,
         } => to_binary(&query_games(deps, start_after, limit, round, player)?),
+        QueryMsg::LotteryState { round } => to_binary(&query_lottery_state(deps, round)?),
     }
 }
 
@@ -381,6 +393,12 @@ fn query_games(
 
     Ok(games)
 }
+
+fn query_lottery_state(deps: Deps, round: u64) -> StdResult<LotteryState> {
+    let jackpot = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
+    Ok(jackpot)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -550,12 +568,84 @@ mod tests {
                 amount: Uint128::from(10_000_000u128),
             }],
         );
+        let msg = ExecuteMsg::Draw {};
+        let err = execute(deps.as_mut(), mock_env(), mock_info("alice", &[]), msg).unwrap_err();
+        assert_eq!(err, ContractError::LotteryInProgress {});
+
         let mut env = mock_env();
         env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
         env.block.time = env.block.time.plus_seconds(300);
         let msg = ExecuteMsg::Draw {};
-
         let res = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap();
-        println!("{:?}", res);
+
+        let past_lottery_state = query_lottery_state(deps.as_ref(), 0).unwrap();
+        assert_eq!(past_lottery_state.terrand_round, 12);
+        assert_eq!(past_lottery_state.draw_time, 1595431350);
+        assert_eq!(past_lottery_state.bonus_number, Some(3));
+        assert_eq!(past_lottery_state.winning_number, Some(vec![4, 15, 6, 5]));
+        assert_eq!(
+            past_lottery_state.multiplier,
+            vec![
+                Decimal::from_str("1").unwrap(),
+                Decimal::from_str("2").unwrap(),
+                Decimal::from_str("5").unwrap()
+            ]
+        );
+        assert_eq!(
+            past_lottery_state.ticket_price,
+            vec![
+                Uint128::from(1000000u128),
+                Uint128::from(2000000u128),
+                Uint128::from(5000000u128)
+            ]
+        );
+        assert_eq!(
+            past_lottery_state.prize_rank,
+            vec![
+                Uint128::from(1000000u128),
+                Uint128::from(5000000u128),
+                Uint128::from(10000000u128),
+                Uint128::from(30000000u128),
+                Uint128::from(50000000u128),
+                Uint128::from(150000000u128),
+                Uint128::from(1000000000u128),
+                Uint128::from(10000000000u128)
+            ]
+        );
+
+        let new_lottery_state = query_lottery_state(deps.as_ref(), 1).unwrap();
+        assert_eq!(new_lottery_state.terrand_round, 22);
+        assert_eq!(new_lottery_state.draw_time, 1595431650);
+        assert_eq!(new_lottery_state.bonus_number, None);
+        assert_eq!(new_lottery_state.winning_number, None);
+        assert_eq!(
+            new_lottery_state.multiplier,
+            vec![
+                Decimal::from_str("1").unwrap(),
+                Decimal::from_str("2").unwrap(),
+                Decimal::from_str("5").unwrap()
+            ]
+        );
+        assert_eq!(
+            new_lottery_state.ticket_price,
+            vec![
+                Uint128::from(1000000u128),
+                Uint128::from(2000000u128),
+                Uint128::from(5000000u128)
+            ]
+        );
+        assert_eq!(
+            new_lottery_state.prize_rank,
+            vec![
+                Uint128::from(1000000u128),
+                Uint128::from(5000000u128),
+                Uint128::from(10000000u128),
+                Uint128::from(30000000u128),
+                Uint128::from(50000000u128),
+                Uint128::from(150000000u128),
+                Uint128::from(1000000000u128),
+                Uint128::from(10000000000u128)
+            ]
+        );
     }
 }

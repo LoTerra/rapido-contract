@@ -29,6 +29,9 @@ pub enum ContractError {
 
     #[error("Bonus number is out of range")]
     BonusOutOfRange {},
+
+    #[error("Lottery still in progress")]
+    LotteryInProgress {},
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }
