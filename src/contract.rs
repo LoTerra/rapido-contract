@@ -206,6 +206,7 @@ pub fn try_register(
     //}
     let mut rounds_info = vec![];
     for round in state.round..state.round.checked_add(u64::from(live_round)).unwrap() {
+
         rounds_info.push(round.to_string());
         match GAMES_STATS.may_load(
             deps.storage,
@@ -347,6 +348,11 @@ pub fn try_collect(
         .api
         .addr_canonicalize(&Addr::unchecked(player).as_str())?;
     let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
+
+    if lottery.winning_number.is_none() && lottery.bonus_number.is_none(){
+        return Err(ContractError::LotteryInProgress {});
+    }
+
     for id in game_id {
         let game = GAMES.load(
             deps.storage,
@@ -818,7 +824,7 @@ mod tests {
         assert_eq!(past_lottery_state.terrand_round, 12);
         assert_eq!(past_lottery_state.draw_time, 1595431350);
         assert_eq!(past_lottery_state.bonus_number, Some(3));
-        assert_eq!(past_lottery_state.winning_number, Some(vec![4, 15, 6, 5]));
+        assert_eq!(past_lottery_state.winning_number, Some(vec![4, 15, 6, 4]));
         assert_eq!(
             past_lottery_state.multiplier,
             vec![
@@ -900,6 +906,54 @@ mod tests {
         let msg = ExecuteMsg::Register {
             numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
+            live_round: 2,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        // Alice winning number found
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(2_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![4, 15, 6, 4, 3],
+            multiplier: Uint128::from(2_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        // Bob 3 numbers found and 1 bonus
+        let sender = mock_info(
+            "bob",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(2_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![4, 15, 6, 5, 3],
+            multiplier: Uint128::from(2_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        // Charlie 2 numbers found and 0 bonus
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(2_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![4, 15, 6, 2, 2],
+            multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
@@ -917,7 +971,17 @@ mod tests {
             game_id: vec![0, 1],
         };
 
-        let res = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap();
-        println!("{:?}", res)
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        println!("{:?}", res);
+        // Error too soon to collect
+        let msg = ExecuteMsg::Collect {
+            round: 1,
+            player: "alice".to_string(),
+            game_id: vec![0],
+        };
+
+        let err = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap_err();
+        assert_eq!(err, ContractError::LotteryInProgress {});
+
     }
 }
