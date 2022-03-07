@@ -549,14 +549,14 @@ fn query_games(
 
 fn query_lottery_state(deps: Deps, round: u64) -> StdResult<LotteryResponse> {
     let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
+    let worker = match lottery.terrand_worker {
+        None => None,
+        Some(terrand_worker) => Some(deps.api.addr_humanize(&terrand_worker)?.to_string()),
+    };
     Ok(LotteryResponse {
         draw_time: lottery.draw_time,
         terrand_round: lottery.terrand_round,
-        terrand_worker: Some(
-            deps.api
-                .addr_humanize(&lottery.terrand_worker.unwrap())?
-                .to_string(),
-        ),
+        terrand_worker: worker,
         prize_rank: lottery.prize_rank,
         ticket_price: lottery.ticket_price,
         counter_player: lottery.counter_player,
@@ -579,14 +579,16 @@ fn query_lotteries_state(
         .take(limit)
         .map(|pair| {
             pair.and_then(|(k, lottery)| {
+                let worker = match lottery.terrand_worker {
+                    None => None,
+                    Some(terrand_worker) => {
+                        Some(deps.api.addr_humanize(&terrand_worker)?.to_string())
+                    }
+                };
                 Ok(LotteryResponse {
                     draw_time: lottery.draw_time,
                     terrand_round: lottery.terrand_round,
-                    terrand_worker: Some(
-                        deps.api
-                            .addr_humanize(&lottery.terrand_worker.unwrap())?
-                            .to_string(),
-                    ),
+                    terrand_worker: worker,
                     prize_rank: lottery.prize_rank,
                     ticket_price: lottery.ticket_price,
                     counter_player: lottery.counter_player,
