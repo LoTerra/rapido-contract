@@ -50,7 +50,9 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
             _ => return Err(ContractError::Unauthorized {}),
         };
 
-        if /* !winning_number.contains(&number) && */ winning_number.len() != 4 {
+        if
+        /* !winning_number.contains(&number) && */
+        winning_number.len() != 4 {
             winning_number.push(number);
         }
     }
@@ -59,8 +61,8 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
 }
 
 /*
-    Deprecated since non deterministic suspicion
- */
+   Deprecated since non deterministic suspicion
+*/
 // pub fn random_number(randomness_hash: String, set_of_balls: u8, range_max: u8) -> Vec<u8>{
 //
 //     let mut winning_numbers: Vec<u8> = vec![];
@@ -124,7 +126,7 @@ pub fn save_game(
 pub fn count_match(game: &Vec<u8>, lottery: &Vec<u8>, set_of_balls: u8) -> u8 {
     let mut count = 0;
     for i in 0..set_of_balls.checked_sub(1).unwrap() as usize {
-        if game[i] == lottery[i]{
+        if game[i] == lottery[i] {
             count += 1
         }
     }

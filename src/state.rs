@@ -62,4 +62,3 @@ pub struct GameStats {
     pub total_spent: Uint128,
 }
 pub const GAMES_STATS: Map<(&[u8], &[u8]), GameStats> = Map::new("games_stats");
-

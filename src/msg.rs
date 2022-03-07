@@ -1,4 +1,4 @@
-use crate::state::{BallsRange, NumberInfo};
+use crate::state::{BallsRange};
 use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,6 @@ pub struct InstantiateMsg {
     pub live_round_max: u8,
 }
 
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
@@ -35,7 +34,11 @@ pub enum ExecuteMsg {
         address: Option<String>,
     },
     Draw {},
-    Collect { round: u64, player: String, game_id: Vec<u64>}
+    Collect {
+        round: u64,
+        player: String,
+        game_id: Vec<u64>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

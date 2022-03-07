@@ -37,7 +37,7 @@ pub enum ContractError {
     LiveRoundMaxLifeExceeded {},
 
     #[error("The amount you sent is not correct, sent {0}, expected {0}")]
-    AmountSentError (Uint128, Uint128),
+    AmountSentError(Uint128, Uint128),
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }

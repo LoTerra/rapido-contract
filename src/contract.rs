@@ -1,6 +1,9 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128, WasmQuery, Addr};
+use cosmwasm_std::{
+    to_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
+    Uint128, WasmQuery,
+};
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::cmp::Ordering;
@@ -9,11 +12,16 @@ use std::ops::{Div, Mul};
 use std::str::FromStr;
 
 use crate::error::ContractError;
-use crate::helpers::{bonus_number, count_match, is_lower_hex, random_number, save_game, winning_number};
+use crate::helpers::{
+    bonus_number, count_match, save_game, winning_number,
+};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
-use crate::state::{BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS, LOTTERY_STATE, STATE, NumberInfo};
+use crate::state::{
+    BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES,
+    GAMES_STATS, LOTTERY_STATE, STATE,
+};
 use terrand;
 
 // version info for migration info
@@ -37,7 +45,7 @@ pub fn instantiate(
         fee_collector_address: deps.api.addr_canonicalize(&msg.fee_collector_address)?,
         fee_collector_drand: msg.fee_collector_drand,
         drand_address: deps.api.addr_canonicalize(&msg.drand_address)?,
-        live_round_max: msg.live_round_max
+        live_round_max: msg.live_round_max,
     };
 
     let state = State {
@@ -94,11 +102,18 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Register { numbers, multiplier, live_round, address } => {
-            try_register(deps, env, info, numbers, multiplier, live_round, address)
-        }
+        ExecuteMsg::Register {
+            numbers,
+            multiplier,
+            live_round,
+            address,
+        } => try_register(deps, env, info, numbers, multiplier, live_round, address),
         ExecuteMsg::Draw {} => try_draw(deps, env, info),
-        ExecuteMsg::Collect {round, player, game_id} => try_collect(deps, env, info, round, player, game_id)
+        ExecuteMsg::Collect {
+            round,
+            player,
+            game_id,
+        } => try_collect(deps, env, info, round, player, game_id),
     }
 }
 
@@ -139,30 +154,24 @@ pub fn try_register(
         Some(address) => deps.api.addr_canonicalize(&address)?,
     };
 
-    let price_per_ticket = sent.div(Uint128::from(numbers.len() as u128));
-    let price_per_round = sent.div(Uint128::from(live_round as u128));
-    println!("{}", price_per_round);
-    println!("{}", price_per_ticket);
+    //let price_per_ticket = sent.div(Uint128::from(numbers.len() as u128));
+    //let price_per_round = sent.div(Uint128::from(live_round as u128));
 
-    let tiers = lottery
-        .ticket_price
-        .into_iter()
-        .filter(|tier| &price_per_ticket == tier)
-        .collect::<Vec<Uint128>>();
+    // let tiers = lottery
+    //     .ticket_price
+    //     .into_iter()
+    //     .filter(|tier| &sent == tier)
+    //     .collect::<Vec<Uint128>>();
 
     //println!("mul ratio {}", price_per_ticket.mul(decimal_per_round));
-
 
     // if tiers.is_empty() || tiers.len() > {
     //     return Err(ContractError::ErrorTierDetermination{})
     // };
     //let multiplier = Decimal::from_ratio(tiers[0], Uint128::from(1_000_000u128));
 
-    if tiers.is_empty() {
-        return Err(ContractError::ErrorTierDetermination {});
-    }
     // Get the multiplier
-    let multiplier = match u128::from(tiers[0]) {
+    let multiplier_decimal = match multiplier.u128() {
         1_000_000 => lottery.multiplier[0],
         2_000_000 => lottery.multiplier[1],
         5_000_000 => lottery.multiplier[2],
@@ -171,24 +180,21 @@ pub fn try_register(
         }
     };
 
-    let decimal_per_round = Decimal::from_str(&live_round.to_string()).unwrap();
-    let decimal_per_len = Decimal::from_str(&numbers.len().to_string()).unwrap();
-    let expected_sent = price_per_ticket.mul(decimal_per_round).mul(decimal_per_len);
+    if sent != state.ticket_price[0].mul(multiplier_decimal) {
+        return Err(ContractError::AmountSentError(sent, Uint128::from(1_000_000u128).mul(multiplier_decimal) ));
+    };
 
-    if sent != expected_sent{
-        return Err(ContractError::AmountSentError(sent, expected_sent));
-    }
 
     let mut new_number = vec![];
     // Check if duplicate numbers
-    for mut number in numbers.clone() {
-        let mut new_arr = number.clone();
-        let bonus_number = number.last().unwrap();
+    //for mut number in numbers.clone() {
+       let mut new_arr = numbers.clone();
+        let bonus_number = numbers.last().unwrap();
         // Handle the bonus number is in the range
         if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
             return Err(ContractError::BonusOutOfRange {});
         }
-        // new_arr.retain(|&x| &x != bonus_number);
+        new_arr.retain(|&x| &x != bonus_number);
         // new_arr.sort();
         // new_arr.dedup();
         //
@@ -197,7 +203,7 @@ pub fn try_register(
         // }
 
         new_number.push(new_arr);
-    }
+    //}
 
     match GAMES_STATS.may_load(
         deps.storage,
@@ -209,7 +215,7 @@ pub fn try_register(
                 state.round,
                 &address_raw,
                 numbers.clone(),
-                multiplier,
+                multiplier_decimal,
                 None,
             )?;
             GAMES_STATS.save(
@@ -227,7 +233,7 @@ pub fn try_register(
                 state.round,
                 &address_raw,
                 numbers.clone(),
-                multiplier,
+                multiplier_decimal,
                 Some(game_stats),
             )?;
 
@@ -324,22 +330,40 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
         .add_attribute("round", state.round.checked_sub(1).unwrap().to_string()))
 }
 
-pub fn try_collect(deps: DepsMut, env: Env, info: MessageInfo, round: u64, player: String, game_id: Vec<u64>) -> Result<Response, ContractError>{
+pub fn try_collect(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    round: u64,
+    player: String,
+    game_id: Vec<u64>,
+) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
-    let player_raw = deps.api.addr_canonicalize(&Addr::unchecked(player).as_str())?;
+    let player_raw = deps
+        .api
+        .addr_canonicalize(&Addr::unchecked(player).as_str())?;
     let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
     for id in game_id {
-        let game = GAMES.load(deps.storage, (&round.to_be_bytes(), &player_raw.as_slice(), &id.to_be_bytes()))?;
-        if !game.resolved{
-            let match_amount = count_match(&game.number, &lottery.clone().winning_number.unwrap(), state.set_of_balls);
-            println!("{}", match_amount );
+        let game = GAMES.load(
+            deps.storage,
+            (
+                &round.to_be_bytes(),
+                &player_raw.as_slice(),
+                &id.to_be_bytes(),
+            ),
+        )?;
+        if !game.resolved {
+            let match_amount = count_match(
+                &game.number,
+                &lottery.clone().winning_number.unwrap(),
+                state.set_of_balls,
+            );
+            println!("{}", match_amount);
             // game.multiplier
             // state.
         }
-    };
-    println!("{:?}", lottery.winning_number );
-
-
+    }
+    println!("{:?}", lottery.winning_number);
 
     Ok(Response::default())
 }
@@ -472,7 +496,7 @@ mod tests {
                 Decimal::from_str("2").unwrap(),
                 Decimal::from_str("5").unwrap(),
             ],
-            live_round_max: 5
+            live_round_max: 5,
         };
 
         let mut env = mock_env();
@@ -626,7 +650,13 @@ mod tests {
             address: None,
         };
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
-        assert_eq!(err, ContractError::AmountSentError(Uint128::from(10_000_000u128), Uint128::from(50_000_000u128)));
+        assert_eq!(
+            err,
+            ContractError::AmountSentError(
+                Uint128::from(10_000_000u128),
+                Uint128::from(50_000_000u128)
+            )
+        );
 
         // Error sent
         let sender = mock_info(
@@ -777,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn try_collect(){
+    fn try_collect() {
         let mut deps = custom_mock_dependencies(&[]);
         default_init(deps.as_mut());
 
@@ -805,13 +835,10 @@ mod tests {
         let msg = ExecuteMsg::Collect {
             round: 0,
             player: "alice".to_string(),
-            game_id: vec![0, 1]
+            game_id: vec![0, 1],
         };
 
         let res = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap();
         println!("{:?}", res)
-
-
-
     }
 }
