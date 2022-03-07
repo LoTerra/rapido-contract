@@ -368,7 +368,24 @@ pub fn try_collect(
                 &lottery.clone().winning_number.unwrap(),
                 state.set_of_balls,
             );
+            let bonus = lottery.bonus_number.unwrap() == game.bonus;
             println!("{:?}", match_amount);
+            /*
+                TODO: Match the rank and winning amount
+             */
+            let prize = match match_amount {
+                1 if !bonus => state.prize_rank[0],
+                1 if bonus => state.prize_rank[1],
+                2 if !bonus => state.prize_rank[2],
+                2 if bonus => state.prize_rank[3],
+                3 if !bonus => state.prize_rank[4],
+                3 if bonus => state.prize_rank[5],
+                4 if !bonus => state.prize_rank[6],
+                4 if bonus => state.prize_rank[7],
+                _ => Uint128::zero()
+            };
+
+            println!("prize {}", prize);
             // game.multiplier
             // state.
         }
