@@ -1,6 +1,7 @@
 use crate::state::{Game, GameStats, GAMES, GAMES_STATS};
 use crate::ContractError;
 use cosmwasm_std::{CanonicalAddr, Decimal, Storage};
+use sha2::{Digest, Sha256};
 
 // There is probably some built-in function for this, but this is a simple way to do it
 pub fn is_lower_hex(combination: &str, len: u8) -> bool {
@@ -63,7 +64,7 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
             _ => return Err(ContractError::Unauthorized {}),
         };
 
-        if !winning_number.contains(&number) && winning_number.len() != 4 {
+        if /* !winning_number.contains(&number) && */ winning_number.len() != 4 {
             winning_number.push(number);
         }
     }
@@ -71,6 +72,33 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
     Ok(winning_number)
 }
 
+pub fn random_number(randomness_hash: String, set_of_balls: u8, range_max: u8) -> Vec<u8>{
+
+    let mut winning_numbers: Vec<u8> = vec![];
+
+    let mut counter = 0;
+    while winning_numbers.len() != 8 {
+        let mut new_hash = format!("{}",counter.to_string());
+        new_hash.push_str(&randomness_hash);
+
+        let mut arr = [0u8; 8];
+        for (place, element) in arr.iter_mut().zip(
+            /*hash.iter()*/ Sha256::digest(new_hash.as_bytes()).iter(),
+        ) {
+            *place = *element;
+        }
+
+        let number = u64::from_be_bytes(arr) % range_max.checked_sub(1).unwrap() as u64;
+        let number_to_u8 = number as u8;
+        if !winning_numbers.contains(&number_to_u8.checked_add(1).unwrap()){
+            winning_numbers.push(number.checked_add(1).unwrap() as u8)
+        }
+        counter +=1;
+    }
+
+
+    winning_numbers
+}
 pub fn save_game(
     storage: &mut dyn Storage,
     round: u64,
@@ -103,4 +131,15 @@ pub fn save_game(
     }
 
     Ok(())
+}
+
+pub fn count_match(game: &Vec<u8>, lottery: &Vec<u8>, set_of_balls: u8) -> u8 {
+    let mut count = 0;
+    for i in 0..set_of_balls.checked_sub(1).unwrap() as usize {
+        if game[i] == lottery[i]{
+            count += 1
+        }
+    }
+
+    count
 }

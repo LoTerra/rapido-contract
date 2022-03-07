@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::convert::TryInto;
 
 use crate::error::ContractError;
-use crate::helpers::{bonus_number, is_lower_hex, save_game, winning_number};
+use crate::helpers::{bonus_number, count_match, is_lower_hex, random_number, save_game, winning_number};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
@@ -252,6 +252,7 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
     };
     let terrand_randomness: terrand::msg::GetRandomResponse = deps.querier.query(&query.into())?;
     let randomness_hash: String = hex::encode(terrand_randomness.randomness.as_slice());
+    // let x = random_number(randomness_hash.clone(), state.set_of_balls, state.range.max);
 
     let numbers: Vec<_> = randomness_hash.chars().collect();
     let winning_number = winning_number(numbers.clone())?;
@@ -300,14 +301,19 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
 }
 
 pub fn try_collect(deps: DepsMut, env: Env, info: MessageInfo, round: u64, player: String, game_id: Vec<u64>) -> Result<Response, ContractError>{
+    let state = STATE.load(deps.storage)?;
     let player_raw = deps.api.addr_canonicalize(&Addr::unchecked(player).as_str())?;
     let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
     for id in game_id {
         let game = GAMES.load(deps.storage, (&round.to_be_bytes(), &player_raw.as_slice(), &id.to_be_bytes()))?;
         if !game.resolved{
-
+            let match_amount = count_match(&game.number, &lottery.clone().winning_number.unwrap(), state.set_of_balls);
+            println!("{}", match_amount );
+            // game.multiplier
+            // state.
         }
     };
+    println!("{:?}", lottery.winning_number );
 
 
 
@@ -418,7 +424,7 @@ mod tests {
             drand_address: "TERRAND".to_string(),
             set_of_balls: 4,
             range_min: 1,
-            range_max: 17,
+            range_max: 16,
             bonus_set_of_balls: 1,
             bonus_range_min: 1,
             bonus_range_max: 8,
@@ -647,5 +653,42 @@ mod tests {
                 Uint128::from(10000000000u128)
             ]
         );
+    }
+
+    #[test]
+    fn try_collect(){
+        let mut deps = custom_mock_dependencies(&[]);
+        default_init(deps.as_mut());
+
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(10_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![vec![5, 15, 12, 8, 1], vec![1, 2, 16, 6, 4]],
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
+        env.block.time = env.block.time.plus_seconds(300);
+        let msg = ExecuteMsg::Draw {};
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+
+        let msg = ExecuteMsg::Collect {
+            round: 0,
+            player: "alice".to_string(),
+            game_id: vec![0, 1]
+        };
+
+        let res = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap();
+        println!("{:?}", res)
+
+
+
     }
 }
