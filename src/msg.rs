@@ -1,4 +1,4 @@
-use crate::state::BallsRange;
+use crate::state::{BallsRange, NumberInfo};
 use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,13 +21,17 @@ pub struct InstantiateMsg {
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
     pub multiplier: Vec<Decimal>,
+    pub live_round_max: u8,
 }
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     Register {
-        numbers: Vec<Vec<u8>>,
+        numbers: Vec<u8>,
+        multiplier: Uint128,
+        live_round: u8,
         address: Option<String>,
     },
     Draw {},

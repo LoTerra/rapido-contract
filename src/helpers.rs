@@ -3,20 +3,6 @@ use crate::ContractError;
 use cosmwasm_std::{CanonicalAddr, Decimal, Storage};
 use sha2::{Digest, Sha256};
 
-// There is probably some built-in function for this, but this is a simple way to do it
-pub fn is_lower_hex(combination: &str, len: u8) -> bool {
-    if combination.len() != (len as usize) {
-        return false;
-    }
-    if !combination
-        .chars()
-        .all(|c| ('a'..='f').contains(&c) || ('0'..='9').contains(&c))
-    {
-        return false;
-    }
-    true
-}
-
 pub fn bonus_number(number: &char) -> Result<u8, ContractError> {
     let bonus_number = match number {
         '0' => 1u8,
@@ -72,38 +58,41 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
     Ok(winning_number)
 }
 
-pub fn random_number(randomness_hash: String, set_of_balls: u8, range_max: u8) -> Vec<u8>{
-
-    let mut winning_numbers: Vec<u8> = vec![];
-
-    let mut counter = 0;
-    while winning_numbers.len() != 8 {
-        let mut new_hash = format!("{}",counter.to_string());
-        new_hash.push_str(&randomness_hash);
-
-        let mut arr = [0u8; 8];
-        for (place, element) in arr.iter_mut().zip(
-            /*hash.iter()*/ Sha256::digest(new_hash.as_bytes()).iter(),
-        ) {
-            *place = *element;
-        }
-
-        let number = u64::from_be_bytes(arr) % range_max.checked_sub(1).unwrap() as u64;
-        let number_to_u8 = number as u8;
-        if !winning_numbers.contains(&number_to_u8.checked_add(1).unwrap()){
-            winning_numbers.push(number.checked_add(1).unwrap() as u8)
-        }
-        counter +=1;
-    }
-
-
-    winning_numbers
-}
+/*
+    Deprecated since non deterministic suspicion
+ */
+// pub fn random_number(randomness_hash: String, set_of_balls: u8, range_max: u8) -> Vec<u8>{
+//
+//     let mut winning_numbers: Vec<u8> = vec![];
+//
+//     let mut counter = 0;
+//     while winning_numbers.len() != 8 {
+//         let mut new_hash = format!("{}",counter.to_string());
+//         new_hash.push_str(&randomness_hash);
+//
+//         let mut arr = [0u8; 8];
+//         for (place, element) in arr.iter_mut().zip(
+//             /*hash.iter()*/ Sha256::digest(new_hash.as_bytes()).iter(),
+//         ) {
+//             *place = *element;
+//         }
+//
+//         let number = u64::from_be_bytes(arr) % range_max.checked_sub(1).unwrap() as u64;
+//         let number_to_u8 = number as u8;
+//         if !winning_numbers.contains(&number_to_u8.checked_add(1).unwrap()){
+//             winning_numbers.push(number.checked_add(1).unwrap() as u8)
+//         }
+//         counter +=1;
+//     }
+//
+//
+//     winning_numbers
+// }
 pub fn save_game(
     storage: &mut dyn Storage,
     round: u64,
     address_raw: &CanonicalAddr,
-    numbers: Vec<Vec<u8>>,
+    numbers: Vec<u8>,
     multiplier: Decimal,
     game: Option<GameStats>,
 ) -> Result<(), ContractError> {
@@ -112,24 +101,23 @@ pub fn save_game(
         Some(game_stats) => game_stats.total_ticket,
     };
 
-    for number in numbers {
-        GAMES.save(
-            storage,
-            (
-                &round.to_be_bytes(),
-                address_raw.as_slice(),
-                &stats.to_be_bytes(),
-            ),
-            &Game {
-                number: vec![number[0], number[1], number[2], number[3]],
-                bonus: number[4],
-                multiplier,
-                resolved: false,
-            },
-        )?;
-        stats += 1;
-    }
-
+    // for number in numbers {
+    GAMES.save(
+        storage,
+        (
+            &round.to_be_bytes(),
+            address_raw.as_slice(),
+            &stats.to_be_bytes(),
+        ),
+        &Game {
+            number: vec![numbers[0], numbers[1], numbers[2], numbers[3]],
+            bonus: numbers[4],
+            multiplier,
+            resolved: false,
+        },
+    )?;
+    stats += 1;
+    // }
     Ok(())
 }
 

@@ -12,6 +12,7 @@ pub struct Config {
     pub fee_collector_address: CanonicalAddr,
     pub fee_collector_drand: Decimal,
     pub drand_address: CanonicalAddr,
+    pub live_round_max: u8,
 }
 pub const CONFIG: Item<Config> = Item::new("config");
 
@@ -61,3 +62,4 @@ pub struct GameStats {
     pub total_spent: Uint128,
 }
 pub const GAMES_STATS: Map<(&[u8], &[u8]), GameStats> = Map::new("games_stats");
+

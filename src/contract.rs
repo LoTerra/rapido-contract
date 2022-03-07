@@ -5,16 +5,15 @@ use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::cmp::Ordering;
 use std::convert::TryInto;
+use std::ops::{Div, Mul};
+use std::str::FromStr;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, is_lower_hex, random_number, save_game, winning_number};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
-use crate::state::{
-    BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS,
-    LOTTERY_STATE, STATE,
-};
+use crate::state::{BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS, LOTTERY_STATE, STATE, NumberInfo};
 use terrand;
 
 // version info for migration info
@@ -38,6 +37,7 @@ pub fn instantiate(
         fee_collector_address: deps.api.addr_canonicalize(&msg.fee_collector_address)?,
         fee_collector_drand: msg.fee_collector_drand,
         drand_address: deps.api.addr_canonicalize(&msg.drand_address)?,
+        live_round_max: msg.live_round_max
     };
 
     let state = State {
@@ -94,8 +94,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Register { numbers, address } => {
-            try_register(deps, env, info, numbers, address)
+        ExecuteMsg::Register { numbers, multiplier, live_round, address } => {
+            try_register(deps, env, info, numbers, multiplier, live_round, address)
         }
         ExecuteMsg::Draw {} => try_draw(deps, env, info),
         ExecuteMsg::Collect {round, player, game_id} => try_collect(deps, env, info, round, player, game_id)
@@ -106,7 +106,9 @@ pub fn try_register(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    numbers: Vec<Vec<u8>>,
+    numbers: Vec<u8>,
+    multiplier: Uint128,
+    live_round: u8,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
@@ -128,22 +130,37 @@ pub fn try_register(
         _ => Err(ContractError::MultipleDenoms {}),
     }?;
 
+    if live_round <= 0 || live_round > config.live_round_max {
+        return Err(ContractError::LiveRoundMaxLifeExceeded {});
+    }
+
     let address_raw = match address {
         None => deps.api.addr_canonicalize(&info.sender.as_str())?,
         Some(address) => deps.api.addr_canonicalize(&address)?,
     };
 
+    let price_per_ticket = sent.div(Uint128::from(numbers.len() as u128));
+    let price_per_round = sent.div(Uint128::from(live_round as u128));
+    println!("{}", price_per_round);
+    println!("{}", price_per_ticket);
+
     let tiers = lottery
         .ticket_price
         .into_iter()
-        .filter(|tier| sent.u128() == tier.u128() * numbers.len() as u128)
+        .filter(|tier| &price_per_ticket == tier)
         .collect::<Vec<Uint128>>();
+
+    //println!("mul ratio {}", price_per_ticket.mul(decimal_per_round));
+
 
     // if tiers.is_empty() || tiers.len() > {
     //     return Err(ContractError::ErrorTierDetermination{})
     // };
     //let multiplier = Decimal::from_ratio(tiers[0], Uint128::from(1_000_000u128));
 
+    if tiers.is_empty() {
+        return Err(ContractError::ErrorTierDetermination {});
+    }
     // Get the multiplier
     let multiplier = match u128::from(tiers[0]) {
         1_000_000 => lottery.multiplier[0],
@@ -154,6 +171,14 @@ pub fn try_register(
         }
     };
 
+    let decimal_per_round = Decimal::from_str(&live_round.to_string()).unwrap();
+    let decimal_per_len = Decimal::from_str(&numbers.len().to_string()).unwrap();
+    let expected_sent = price_per_ticket.mul(decimal_per_round).mul(decimal_per_len);
+
+    if sent != expected_sent{
+        return Err(ContractError::AmountSentError(sent, expected_sent));
+    }
+
     let mut new_number = vec![];
     // Check if duplicate numbers
     for mut number in numbers.clone() {
@@ -163,14 +188,13 @@ pub fn try_register(
         if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
             return Err(ContractError::BonusOutOfRange {});
         }
-
-        new_arr.retain(|&x| &x != bonus_number);
-        new_arr.sort();
-        new_arr.dedup();
-
-        if new_arr.len() as u8 != state.set_of_balls {
-            return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
-        }
+        // new_arr.retain(|&x| &x != bonus_number);
+        // new_arr.sort();
+        // new_arr.dedup();
+        //
+        // if new_arr.len() as u8 != state.set_of_balls {
+        //     return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+        // }
 
         new_number.push(new_arr);
     }
@@ -448,6 +472,7 @@ mod tests {
                 Decimal::from_str("2").unwrap(),
                 Decimal::from_str("5").unwrap(),
             ],
+            live_round_max: 5
         };
 
         let mut env = mock_env();
@@ -468,7 +493,9 @@ mod tests {
         default_init(deps.as_mut());
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 2]],
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
             address: None,
         };
         let sender = mock_info(
@@ -488,40 +515,67 @@ mod tests {
         let mut env = mock_env();
         env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
 
-        // Error duplicated numbers
-        let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 5, 15, 2], vec![1, 2, 17, 1, 3]],
-            address: None,
-        };
-        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
-        assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+        // Remove this because not fitting with the current design
+        // // Error duplicated numbers
+        // let msg = ExecuteMsg::Register {
+        //     numbers: vec![vec![5, 7, 5, 15, 2], vec![1, 2, 17, 1, 3]],
+        //     address: None,
+        //     live_round: 1
+        // };
+        // let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
+        // assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Error bonus out of range
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 1, 15, 10], vec![1, 2, 17, 5, 0]],
+            numbers: vec![5, 7, 12, 15, 10],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
             address: None,
         };
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 1, 15, 4], vec![1, 2, 17, 5, 0]],
-
+            numbers: vec![5, 7, 12, 15, 0],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
             address: None,
         };
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
 
-        // Wrong set of balls
+        // live round error max life exceeded
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 1, 15, 4, 4], vec![1, 2, 17, 5, 1]],
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 0,
             address: None,
         };
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
-        assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+        assert_eq!(err, ContractError::LiveRoundMaxLifeExceeded {});
+
+        let msg = ExecuteMsg::Register {
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 6,
+            address: None,
+        };
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::LiveRoundMaxLifeExceeded {});
+
+        // // Wrong set of balls
+        // let msg = ExecuteMsg::Register {
+        //     numbers: vec![vec![5, 7, 1, 15, 4, 4], vec![1, 2, 17, 5, 1]],
+        //     address: None,
+        //     live_round: 1
+        // };
+        // let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
+        // assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Success
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 4]],
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
             address: None,
         };
         let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
@@ -556,6 +610,71 @@ mod tests {
                 }
             ]
         );
+
+        // Error sent
+        let sender = mock_info(
+            "bob",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(10_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
+        assert_eq!(err, ContractError::AmountSentError(Uint128::from(10_000_000u128), Uint128::from(50_000_000u128)));
+
+        // Error sent
+        let sender = mock_info(
+            "bob",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(4_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
+
+        assert_eq!(
+            res.attributes,
+            vec![
+                Attribute::new("method", "try_register"),
+                Attribute::new("round", "0"),
+                Attribute::new("ticket_amount", "2"),
+                Attribute::new("sender", "bob"),
+                Attribute::new("recipient", "bob"),
+            ]
+        );
+
+        let games = query_games(deps.as_ref(), None, None, 0, "alice".to_string()).unwrap();
+        assert_eq!(
+            games,
+            vec![
+                GameResponse {
+                    number: vec![1, 2, 17, 6],
+                    bonus: 4,
+                    multiplier: Decimal::from_str("5").unwrap(),
+                    resolved: false,
+                    game_id: 1
+                },
+                GameResponse {
+                    number: vec![5, 7, 12, 15],
+                    bonus: 1,
+                    multiplier: Decimal::from_str("5").unwrap(),
+                    resolved: false,
+                    game_id: 0
+                }
+            ]
+        );
     }
 
     #[test]
@@ -564,7 +683,9 @@ mod tests {
         default_init(deps.as_mut());
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 7, 12, 15, 1], vec![1, 2, 17, 6, 2]],
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
             address: None,
         };
         let sender = mock_info(
@@ -668,7 +789,9 @@ mod tests {
             }],
         );
         let msg = ExecuteMsg::Register {
-            numbers: vec![vec![5, 15, 12, 8, 1], vec![1, 2, 16, 6, 4]],
+            numbers: vec![5, 7, 12, 15, 1],
+            multiplier: Uint128::from(5_000_000u128),
+            live_round: 1,
             address: None,
         };
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
