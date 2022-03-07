@@ -1,14 +1,13 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
-    Uint128, WasmQuery,
+    to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo,
+    Order, Response, StdResult, SubMsg, Uint128, WasmQuery,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
-use std::cmp::Ordering;
 use std::convert::TryInto;
-use std::ops::{Div, Mul};
+use std::ops::Mul;
 use std::str::FromStr;
 
 use crate::error::ContractError;
@@ -17,9 +16,10 @@ use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{
-    BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS,
-    LOTTERY_STATE, STATE,
+    BallsRange, Config, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS, LOTTERY_STATE,
+    STATE,
 };
+use crate::taxation::deduct_tax;
 use terrand;
 
 // version info for migration info
@@ -41,8 +41,8 @@ pub fn instantiate(
         frequency: msg.frequency,
         fee_collector: msg.fee_collector,
         fee_collector_address: deps.api.addr_canonicalize(&msg.fee_collector_address)?,
-        fee_collector_drand: msg.fee_collector_drand,
-        drand_address: deps.api.addr_canonicalize(&msg.drand_address)?,
+        fee_collector_terrand: msg.fee_collector_terrand,
+        terrand_address: deps.api.addr_canonicalize(&msg.terrand_address)?,
         live_round_max: msg.live_round_max,
     };
 
@@ -78,6 +78,7 @@ pub fn instantiate(
         &LotteryState {
             draw_time,
             terrand_round: next_round,
+            terrand_worker: None,
             prize_rank: msg.prize_rank,
             ticket_price: msg.ticket_price,
             counter_player: None,
@@ -206,7 +207,6 @@ pub fn try_register(
     //}
     let mut rounds_info = vec![];
     for round in state.round..state.round.checked_add(u64::from(live_round)).unwrap() {
-
         rounds_info.push(round.to_string());
         match GAMES_STATS.may_load(
             deps.storage,
@@ -267,7 +267,7 @@ pub fn try_register(
         ))
 }
 
-pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
     let lottery = LOTTERY_STATE.load(deps.storage, &state.round.to_be_bytes())?;
@@ -280,7 +280,7 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
     let msg = terrand::msg::QueryMsg::GetRandomness {
         round: lottery.terrand_round,
     };
-    let terrand_human = deps.api.addr_humanize(&config.drand_address)?;
+    let terrand_human = deps.api.addr_humanize(&config.terrand_address)?;
     let query = WasmQuery::Smart {
         contract_addr: terrand_human.to_string(),
         msg: to_binary(&msg)?,
@@ -293,6 +293,7 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
     let winning_number = winning_number(numbers.clone())?;
     let bonus_number = bonus_number(numbers.last().unwrap())?;
 
+    let worker_raw = deps.api.addr_canonicalize(&terrand_randomness.worker)?;
     // Update lottery winning and bonus number
     LOTTERY_STATE.update(
         deps.storage,
@@ -301,6 +302,7 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
             let mut update_lottery_state = lottery_state.unwrap();
             update_lottery_state.winning_number = Some(winning_number);
             update_lottery_state.bonus_number = Some(bonus_number);
+            update_lottery_state.terrand_worker = Some(worker_raw);
             Ok(update_lottery_state)
         },
     )?;
@@ -321,6 +323,7 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
         &LotteryState {
             draw_time,
             terrand_round: next_round,
+            terrand_worker: None,
             prize_rank: state.prize_rank,
             ticket_price: state.ticket_price,
             counter_player: None,
@@ -337,22 +340,24 @@ pub fn try_draw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, 
 
 pub fn try_collect(
     deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
+    _env: Env,
+    _info: MessageInfo,
     round: u64,
     player: String,
     game_id: Vec<u64>,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
     let player_raw = deps
         .api
-        .addr_canonicalize(&Addr::unchecked(player).as_str())?;
+        .addr_canonicalize(&Addr::unchecked(player.clone()).as_str())?;
     let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
 
-    if lottery.winning_number.is_none() && lottery.bonus_number.is_none(){
+    if lottery.winning_number.is_none() && lottery.bonus_number.is_none() {
         return Err(ContractError::LotteryInProgress {});
     }
 
+    let mut total_amount_to_send = Uint128::zero();
     for id in game_id {
         let game = GAMES.load(
             deps.storage,
@@ -369,10 +374,7 @@ pub fn try_collect(
                 state.set_of_balls,
             );
             let bonus = lottery.bonus_number.unwrap() == game.bonus;
-            println!("{:?}", match_amount);
-            /*
-                TODO: Match the rank and winning amount
-             */
+
             let prize = match match_amount {
                 1 if !bonus => state.prize_rank[0],
                 1 if bonus => state.prize_rank[1],
@@ -382,17 +384,81 @@ pub fn try_collect(
                 3 if bonus => state.prize_rank[5],
                 4 if !bonus => state.prize_rank[6],
                 4 if bonus => state.prize_rank[7],
-                _ => Uint128::zero()
+                _ => Uint128::zero(),
             };
+            let price_multiplier = prize.mul(game.multiplier);
+            total_amount_to_send = total_amount_to_send.checked_add(price_multiplier).unwrap();
 
-            println!("prize {}", prize);
-            // game.multiplier
-            // state.
+            GAMES.update(
+                deps.storage,
+                (
+                    &round.to_be_bytes(),
+                    &player_raw.as_slice(),
+                    &id.to_be_bytes(),
+                ),
+                |game| -> Result<_, ContractError> {
+                    let mut update_game = game.unwrap();
+                    update_game.resolved = true;
+                    Ok(update_game)
+                },
+            )?;
         }
     }
-    println!("{:?}", lottery.winning_number);
 
-    Ok(Response::default())
+    let mut res = Response::new();
+    if !total_amount_to_send.is_zero() {
+        let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
+        let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
+
+        let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: player,
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom.clone(),
+                    amount: total_amount_to_send
+                        .checked_sub(collector_tax_amount)
+                        .unwrap()
+                        .checked_sub(terrand_tax_amount)
+                        .unwrap(),
+                },
+            )?],
+        });
+        res.messages.push(SubMsg::new(msg_prize_payout));
+
+        let msg_fee_collector_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: deps
+                .api
+                .addr_humanize(&config.fee_collector_address)?
+                .to_string(),
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom.clone(),
+                    amount: collector_tax_amount,
+                },
+            )?],
+        });
+        res.messages.push(SubMsg::new(msg_fee_collector_payout));
+
+        // prepare message to pay tax to terrand worker
+        let msg_fee_terrand_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: deps
+                .api
+                .addr_humanize(&lottery.terrand_worker.unwrap())?
+                .to_string(),
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom,
+                    amount: terrand_tax_amount,
+                },
+            )?],
+        });
+        res.messages.push(SubMsg::new(msg_fee_terrand_payout));
+    }
+
+    Ok(res)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -420,8 +486,8 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
             .api
             .addr_humanize(&config.fee_collector_address)?
             .to_string(),
-        fee_collector_drand: config.fee_collector_drand,
-        fee_collector_drand_address: deps.api.addr_humanize(&config.drand_address)?.to_string(),
+        fee_collector_terrand: config.fee_collector_terrand,
+        fee_collector_terrand_address: deps.api.addr_humanize(&config.terrand_address)?.to_string(),
     })
 }
 
@@ -495,8 +561,8 @@ mod tests {
             frequency: 300,
             fee_collector: Decimal::from_str("0.05").unwrap(),
             fee_collector_address: "STAKING".to_string(),
-            fee_collector_drand: Decimal::from_str("0.01").unwrap(),
-            drand_address: "TERRAND".to_string(),
+            fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
+            terrand_address: "TERRAND".to_string(),
             set_of_balls: 4,
             range_min: 1,
             range_max: 16,
@@ -999,6 +1065,5 @@ mod tests {
 
         let err = execute(deps.as_mut(), env, mock_info("alice", &[]), msg).unwrap_err();
         assert_eq!(err, ContractError::LotteryInProgress {});
-
     }
 }

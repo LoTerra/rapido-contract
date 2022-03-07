@@ -7,11 +7,10 @@
     "bonus_range_min",
     "bonus_set_of_balls",
     "denom",
-    "drand_address",
     "draw_time",
     "fee_collector",
     "fee_collector_address",
-    "fee_collector_drand",
+    "fee_collector_terrand",
     "frequency",
     "live_round_max",
     "multiplier",
@@ -19,6 +18,7 @@
     "range_max",
     "range_min",
     "set_of_balls",
+    "terrand_address",
     "ticket_price"
   ],
   "properties": {
@@ -40,9 +40,6 @@
     "denom": {
       "type": "string"
     },
-    "drand_address": {
-      "type": "string"
-    },
     "draw_time": {
       "type": "integer",
       "format": "uint64",
@@ -54,7 +51,7 @@
     "fee_collector_address": {
       "type": "string"
     },
-    "fee_collector_drand": {
+    "fee_collector_terrand": {
       "$ref": "#/definitions/Decimal"
     },
     "frequency": {
@@ -93,6 +90,9 @@
       "type": "integer",
       "format": "uint8",
       "minimum": 0.0
+    },
+    "terrand_address": {
+      "type": "string"
     },
     "ticket_price": {
       "type": "array",

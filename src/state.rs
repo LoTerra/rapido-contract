@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Addr, CanonicalAddr, Decimal, Uint128};
+use cosmwasm_std::{CanonicalAddr, Decimal, Uint128};
 use cw_storage_plus::{Item, Map};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -10,8 +10,8 @@ pub struct Config {
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: CanonicalAddr,
-    pub fee_collector_drand: Decimal,
-    pub drand_address: CanonicalAddr,
+    pub fee_collector_terrand: Decimal,
+    pub terrand_address: CanonicalAddr,
     pub live_round_max: u8,
 }
 pub const CONFIG: Item<Config> = Item::new("config");
@@ -38,6 +38,7 @@ pub const STATE: Item<State> = Item::new("state");
 pub struct LotteryState {
     pub draw_time: u64,
     pub terrand_round: u64,
+    pub terrand_worker: Option<CanonicalAddr>,
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
     pub counter_player: Option<u64>,

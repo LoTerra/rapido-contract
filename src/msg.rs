@@ -1,4 +1,3 @@
-use crate::state::BallsRange;
 use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -10,8 +9,8 @@ pub struct InstantiateMsg {
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: String,
-    pub fee_collector_drand: Decimal,
-    pub drand_address: String,
+    pub fee_collector_terrand: Decimal,
+    pub terrand_address: String,
     pub set_of_balls: u8,
     pub range_min: u8,
     pub range_max: u8,
@@ -68,8 +67,8 @@ pub struct ConfigResponse {
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: String,
-    pub fee_collector_drand: Decimal,
-    pub fee_collector_drand_address: String,
+    pub fee_collector_terrand: Decimal,
+    pub fee_collector_terrand_address: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

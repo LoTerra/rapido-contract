@@ -1,7 +1,6 @@
-use crate::state::{Game, GameStats, GAMES, GAMES_STATS};
+use crate::state::{Game, GameStats, GAMES};
 use crate::ContractError;
 use cosmwasm_std::{CanonicalAddr, Decimal, Storage};
-use sha2::{Digest, Sha256};
 
 pub fn bonus_number(number: &char) -> Result<u8, ContractError> {
     let bonus_number = match number {
@@ -98,7 +97,7 @@ pub fn save_game(
     multiplier: Decimal,
     game: Option<GameStats>,
 ) -> Result<(), ContractError> {
-    let mut stats = match game {
+    let stats = match game {
         None => 0,
         Some(game_stats) => game_stats.total_ticket,
     };
@@ -118,7 +117,7 @@ pub fn save_game(
             resolved: false,
         },
     )?;
-    stats += 1;
+    //stats += 1;
     // }
     Ok(())
 }
