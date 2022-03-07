@@ -143,7 +143,7 @@ pub fn try_register(
         _ => Err(ContractError::MultipleDenoms {}),
     }?;
 
-    if live_round <= 0 || live_round > config.live_round_max {
+    if live_round == 0 || live_round > config.live_round_max {
         return Err(ContractError::LiveRoundMaxLifeExceeded {});
     }
 

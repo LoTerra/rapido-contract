@@ -55,6 +55,7 @@ pub struct Game {
     pub multiplier: Decimal,
     pub resolved: bool,
 }
+#[allow(clippy::type_complexity)]
 pub const GAMES: Map<(&[u8], &[u8], &[u8]), Game> = Map::new("games");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
