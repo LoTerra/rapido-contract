@@ -4,7 +4,7 @@ use std::fs::create_dir_all;
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 use loterra_v2::msg::{
-    ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
+    ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse, LotteryResponse
 };
 use loterra_v2::state::State;
 
@@ -21,4 +21,5 @@ fn main() {
     export_schema(&schema_for!(ConfigResponse), &out_dir);
     export_schema(&schema_for!(StateResponse), &out_dir);
     export_schema(&schema_for!(GameResponse), &out_dir);
+    export_schema(&schema_for!(LotteryResponse), &out_dir);
 }

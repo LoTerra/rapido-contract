@@ -1,6 +1,9 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, SubMsg, Uint128, WasmQuery, Attribute};
+use cosmwasm_std::{
+    to_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Order, Response, StdResult, SubMsg, Uint128, WasmQuery,
+};
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::convert::TryInto;
@@ -10,7 +13,8 @@ use std::str::FromStr;
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
+    ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, LotteryResponse, QueryMsg,
+    StateResponse,
 };
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS, LOTTERY_STATE,
@@ -472,6 +476,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             player,
         } => to_binary(&query_games(deps, start_after, limit, round, player)?),
         QueryMsg::LotteryState { round } => to_binary(&query_lottery_state(deps, round)?),
+        QueryMsg::LotteriesState { start_after, limit } => {
+            to_binary(&query_lotteries_state(deps, start_after, limit)?)
+        }
     }
 }
 
@@ -540,11 +547,60 @@ fn query_games(
     Ok(games)
 }
 
-fn query_lottery_state(deps: Deps, round: u64) -> StdResult<LotteryState> {
-    let jackpot = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
-    Ok(jackpot)
+fn query_lottery_state(deps: Deps, round: u64) -> StdResult<LotteryResponse> {
+    let lottery = LOTTERY_STATE.load(deps.storage, &round.to_be_bytes())?;
+    Ok(LotteryResponse {
+        draw_time: lottery.draw_time,
+        terrand_round: lottery.terrand_round,
+        terrand_worker: Some(
+            deps.api
+                .addr_humanize(&lottery.terrand_worker.unwrap())?
+                .to_string(),
+        ),
+        prize_rank: lottery.prize_rank,
+        ticket_price: lottery.ticket_price,
+        counter_player: lottery.counter_player,
+        multiplier: lottery.multiplier,
+        winning_number: lottery.winning_number,
+        bonus_number: lottery.bonus_number,
+        lottery_id: round,
+    })
 }
+fn query_lotteries_state(
+    deps: Deps,
+    start_after: Option<u64>,
+    limit: Option<u32>,
+) -> StdResult<Vec<LotteryResponse>> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let start = start_after.map(|d| Bound::Exclusive(d.to_be_bytes().to_vec()));
 
+    let lotteries = LOTTERY_STATE
+        .range(deps.storage, None, start, Order::Descending)
+        .take(limit)
+        .map(|pair| {
+            pair.and_then(|(k, lottery)| {
+                Ok(LotteryResponse {
+                    draw_time: lottery.draw_time,
+                    terrand_round: lottery.terrand_round,
+                    terrand_worker: Some(
+                        deps.api
+                            .addr_humanize(&lottery.terrand_worker.unwrap())?
+                            .to_string(),
+                    ),
+                    prize_rank: lottery.prize_rank,
+                    ticket_price: lottery.ticket_price,
+                    counter_player: lottery.counter_player,
+                    multiplier: lottery.multiplier,
+                    winning_number: lottery.winning_number,
+                    bonus_number: lottery.bonus_number,
+                    lottery_id: u64::from_be_bytes(k.try_into().unwrap()),
+                })
+            })
+        })
+        .collect::<StdResult<Vec<LotteryResponse>>>()?;
+
+    Ok(lotteries)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1053,10 +1109,35 @@ mod tests {
             game_id: vec![0, 1],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send { to_address: "alice".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(18_799_000_000u128) }] });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send { to_address: "STAKING".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(999_000_000u128) }] });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send { to_address: "worker".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(199_000_000u128) }] });
-        assert_eq!(res.messages, vec![SubMsg::new(msg_payout), SubMsg::new(msg_fee_collector), SubMsg::new(msg_fee_worker)]);
+        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "alice".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(18_799_000_000u128),
+            }],
+        });
+        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "STAKING".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(999_000_000u128),
+            }],
+        });
+        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "worker".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(199_000_000u128),
+            }],
+        });
+        assert_eq!(
+            res.messages,
+            vec![
+                SubMsg::new(msg_payout),
+                SubMsg::new(msg_fee_collector),
+                SubMsg::new(msg_fee_worker)
+            ]
+        );
 
         let msg = ExecuteMsg::Collect {
             round: 0,
@@ -1064,10 +1145,35 @@ mod tests {
             game_id: vec![0],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send { to_address: "bob".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(281_000_000u128) }] });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send { to_address: "STAKING".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(14_851_485u128) }] });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send { to_address: "worker".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(2_970_297u128) }] });
-        assert_eq!(res.messages, vec![SubMsg::new(msg_payout), SubMsg::new(msg_fee_collector), SubMsg::new(msg_fee_worker)]);
+        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "bob".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(281_000_000u128),
+            }],
+        });
+        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "STAKING".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(14_851_485u128),
+            }],
+        });
+        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "worker".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(2_970_297u128),
+            }],
+        });
+        assert_eq!(
+            res.messages,
+            vec![
+                SubMsg::new(msg_payout),
+                SubMsg::new(msg_fee_collector),
+                SubMsg::new(msg_fee_worker)
+            ]
+        );
 
         let msg = ExecuteMsg::Collect {
             round: 0,
@@ -1075,10 +1181,35 @@ mod tests {
             game_id: vec![0],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send { to_address: "charlie".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(93_069_306u128) }] });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send { to_address: "STAKING".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(4_950_495u128) }] });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send { to_address: "worker".to_string(), amount: vec![Coin{ denom: "uusd".to_string(), amount: Uint128::from(990_099u128) }] });
-        assert_eq!(res.messages, vec![SubMsg::new(msg_payout), SubMsg::new(msg_fee_collector), SubMsg::new(msg_fee_worker)]);
+        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "charlie".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(93_069_306u128),
+            }],
+        });
+        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "STAKING".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(4_950_495u128),
+            }],
+        });
+        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "worker".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(990_099u128),
+            }],
+        });
+        assert_eq!(
+            res.messages,
+            vec![
+                SubMsg::new(msg_payout),
+                SubMsg::new(msg_fee_collector),
+                SubMsg::new(msg_fee_worker)
+            ]
+        );
 
         // Error too soon to collect
         let msg = ExecuteMsg::Collect {

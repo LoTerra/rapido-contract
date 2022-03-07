@@ -93,6 +93,37 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Query all jackpots",
+      "type": "object",
+      "required": [
+        "lotteries_state"
+      ],
+      "properties": {
+        "lotteries_state": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_after": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }
