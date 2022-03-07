@@ -12,15 +12,13 @@ use std::ops::{Div, Mul};
 use std::str::FromStr;
 
 use crate::error::ContractError;
-use crate::helpers::{
-    bonus_number, count_match, save_game, winning_number,
-};
+use crate::helpers::{bonus_number, count_match, save_game, winning_number};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{
-    BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES,
-    GAMES_STATS, LOTTERY_STATE, STATE,
+    BallsRange, Config, Game, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS,
+    LOTTERY_STATE, STATE,
 };
 use terrand;
 
@@ -180,81 +178,87 @@ pub fn try_register(
         }
     };
 
-    if sent != state.ticket_price[0].mul(multiplier_decimal) {
-        return Err(ContractError::AmountSentError(sent, Uint128::from(1_000_000u128).mul(multiplier_decimal) ));
+    let expected_amount = state.ticket_price[0]
+        .mul(multiplier_decimal)
+        .mul(Decimal::from_str(&live_round.to_string()).unwrap());
+    if sent != expected_amount {
+        return Err(ContractError::AmountSentError(sent, expected_amount));
     };
-
 
     let mut new_number = vec![];
     // Check if duplicate numbers
     //for mut number in numbers.clone() {
-       let mut new_arr = numbers.clone();
-        let bonus_number = numbers.last().unwrap();
-        // Handle the bonus number is in the range
-        if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
-            return Err(ContractError::BonusOutOfRange {});
-        }
-        new_arr.retain(|&x| &x != bonus_number);
-        // new_arr.sort();
-        // new_arr.dedup();
-        //
-        // if new_arr.len() as u8 != state.set_of_balls {
-        //     return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
-        // }
+    let mut new_arr = numbers.clone();
+    let bonus_number = numbers.last().unwrap();
+    // Handle the bonus number is in the range
+    if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
+        return Err(ContractError::BonusOutOfRange {});
+    }
+    new_arr.retain(|&x| &x != bonus_number);
+    // new_arr.sort();
+    // new_arr.dedup();
+    //
+    // if new_arr.len() as u8 != state.set_of_balls {
+    //     return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+    // }
 
-        new_number.push(new_arr);
+    new_number.push(new_arr);
     //}
+    let mut rounds_info = vec![];
+    for round in state.round..state.round.checked_add(u64::from(live_round)).unwrap() {
+        rounds_info.push(round.to_string());
+        match GAMES_STATS.may_load(
+            deps.storage,
+            (&round.to_be_bytes(), &address_raw.as_slice()),
+        )? {
+            None => {
+                save_game(
+                    deps.storage,
+                    round,
+                    &address_raw,
+                    numbers.clone(),
+                    multiplier_decimal,
+                    None,
+                )?;
+                GAMES_STATS.save(
+                    deps.storage,
+                    (&round.to_be_bytes(), &address_raw.as_slice()),
+                    &GameStats {
+                        total_ticket: 1,
+                        total_spent: sent,
+                    },
+                )?;
+            }
+            Some(game_stats) => {
+                save_game(
+                    deps.storage,
+                    round,
+                    &address_raw,
+                    numbers.clone(),
+                    multiplier_decimal,
+                    Some(game_stats),
+                )?;
 
-    match GAMES_STATS.may_load(
-        deps.storage,
-        (&state.round.to_be_bytes(), &address_raw.as_slice()),
-    )? {
-        None => {
-            save_game(
-                deps.storage,
-                state.round,
-                &address_raw,
-                numbers.clone(),
-                multiplier_decimal,
-                None,
-            )?;
-            GAMES_STATS.save(
-                deps.storage,
-                (&state.round.to_be_bytes(), &address_raw.as_slice()),
-                &GameStats {
-                    total_ticket: numbers.len() as u64,
-                    total_spent: sent,
-                },
-            )?;
-        }
-        Some(game_stats) => {
-            save_game(
-                deps.storage,
-                state.round,
-                &address_raw,
-                numbers.clone(),
-                multiplier_decimal,
-                Some(game_stats),
-            )?;
-
-            GAMES_STATS.update(
-                deps.storage,
-                (&state.round.to_be_bytes(), &address_raw.as_slice()),
-                |game_stats| -> Result<_, ContractError> {
-                    let mut update_game_stats = game_stats.unwrap();
-                    update_game_stats.total_spent =
-                        update_game_stats.total_spent.checked_add(sent).unwrap();
-                    update_game_stats.total_ticket += numbers.len() as u64;
-                    Ok(update_game_stats)
-                },
-            )?;
+                GAMES_STATS.update(
+                    deps.storage,
+                    (&round.to_be_bytes(), &address_raw.as_slice()),
+                    |game_stats| -> Result<_, ContractError> {
+                        let mut update_game_stats = game_stats.unwrap();
+                        update_game_stats.total_spent =
+                            update_game_stats.total_spent.checked_add(sent).unwrap();
+                        update_game_stats.total_ticket += 1;
+                        Ok(update_game_stats)
+                    },
+                )?;
+            }
         }
     }
 
     Ok(Response::new()
         .add_attribute("method", "try_register")
-        .add_attribute("round", state.round.to_string())
-        .add_attribute("ticket_amount", numbers.len().to_string())
+        .add_attribute("round", format!("[{}]", rounds_info.join(", ")))
+        .add_attribute("live_round", live_round.to_string())
+        .add_attribute("ticket_amount", "1".to_string())
         .add_attribute("sender", info.sender)
         .add_attribute(
             "recipient",
@@ -358,7 +362,7 @@ pub fn try_collect(
                 &lottery.clone().winning_number.unwrap(),
                 state.set_of_balls,
             );
-            println!("{}", match_amount);
+            println!("{:?}", match_amount);
             // game.multiplier
             // state.
         }
@@ -526,7 +530,7 @@ mod tests {
             "alice",
             &[Coin {
                 denom: "uusd".to_string(),
-                amount: Uint128::from(10_000_000u128),
+                amount: Uint128::from(5_000_000u128),
             }],
         );
         let mut env = mock_env();
@@ -607,8 +611,58 @@ mod tests {
             res.attributes,
             vec![
                 Attribute::new("method", "try_register"),
-                Attribute::new("round", "0"),
-                Attribute::new("ticket_amount", "2"),
+                Attribute::new("round", "[0]"),
+                Attribute::new("live_round", "1"),
+                Attribute::new("ticket_amount", "1"),
+                Attribute::new("sender", "alice"),
+                Attribute::new("recipient", "alice"),
+            ]
+        );
+        // Error sent less than required
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(1_000_000u128),
+            }],
+        );
+
+        let msg = ExecuteMsg::Register {
+            numbers: vec![1, 2, 17, 6, 4],
+            multiplier: Uint128::from(1_000_000u128),
+            live_round: 4,
+            address: None,
+        };
+        let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
+        assert_eq!(
+            err,
+            ContractError::AmountSentError(
+                Uint128::from(1_000_000u128),
+                Uint128::from(4_000_000u128)
+            )
+        );
+        let sender = mock_info(
+            "alice",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(4_000_000u128),
+            }],
+        );
+
+        let msg = ExecuteMsg::Register {
+            numbers: vec![1, 2, 17, 6, 4],
+            multiplier: Uint128::from(1_000_000u128),
+            live_round: 4,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
+        assert_eq!(
+            res.attributes,
+            vec![
+                Attribute::new("method", "try_register"),
+                Attribute::new("round", "[0, 1, 2, 3]"),
+                Attribute::new("live_round", "4"),
+                Attribute::new("ticket_amount", "1"),
                 Attribute::new("sender", "alice"),
                 Attribute::new("recipient", "alice"),
             ]
@@ -621,7 +675,7 @@ mod tests {
                 GameResponse {
                     number: vec![1, 2, 17, 6],
                     bonus: 4,
-                    multiplier: Decimal::from_str("5").unwrap(),
+                    multiplier: Decimal::from_str("1").unwrap(),
                     resolved: false,
                     game_id: 1
                 },
@@ -633,6 +687,39 @@ mod tests {
                     game_id: 0
                 }
             ]
+        );
+        let games = query_games(deps.as_ref(), None, None, 1, "alice".to_string()).unwrap();
+        assert_eq!(
+            games,
+            vec![GameResponse {
+                number: vec![1, 2, 17, 6],
+                bonus: 4,
+                multiplier: Decimal::from_str("1").unwrap(),
+                resolved: false,
+                game_id: 0
+            }]
+        );
+        let games = query_games(deps.as_ref(), None, None, 2, "alice".to_string()).unwrap();
+        assert_eq!(
+            games,
+            vec![GameResponse {
+                number: vec![1, 2, 17, 6],
+                bonus: 4,
+                multiplier: Decimal::from_str("1").unwrap(),
+                resolved: false,
+                game_id: 0
+            }]
+        );
+        let games = query_games(deps.as_ref(), None, None, 3, "alice".to_string()).unwrap();
+        assert_eq!(
+            games,
+            vec![GameResponse {
+                number: vec![1, 2, 17, 6],
+                bonus: 4,
+                multiplier: Decimal::from_str("1").unwrap(),
+                resolved: false,
+                game_id: 0
+            }]
         );
 
         // Error sent
@@ -654,16 +741,16 @@ mod tests {
             err,
             ContractError::AmountSentError(
                 Uint128::from(10_000_000u128),
-                Uint128::from(50_000_000u128)
+                Uint128::from(5_000_000u128)
             )
         );
 
-        // Error sent
+        // Success
         let sender = mock_info(
             "bob",
             &[Coin {
                 denom: "uusd".to_string(),
-                amount: Uint128::from(4_000_000u128),
+                amount: Uint128::from(5_000_000u128),
             }],
         );
         let msg = ExecuteMsg::Register {
@@ -678,32 +765,24 @@ mod tests {
             res.attributes,
             vec![
                 Attribute::new("method", "try_register"),
-                Attribute::new("round", "0"),
-                Attribute::new("ticket_amount", "2"),
+                Attribute::new("round", "[0]"),
+                Attribute::new("live_round", "1"),
+                Attribute::new("ticket_amount", "1"),
                 Attribute::new("sender", "bob"),
                 Attribute::new("recipient", "bob"),
             ]
         );
 
-        let games = query_games(deps.as_ref(), None, None, 0, "alice".to_string()).unwrap();
+        let games = query_games(deps.as_ref(), None, None, 0, "bob".to_string()).unwrap();
         assert_eq!(
             games,
-            vec![
-                GameResponse {
-                    number: vec![1, 2, 17, 6],
-                    bonus: 4,
-                    multiplier: Decimal::from_str("5").unwrap(),
-                    resolved: false,
-                    game_id: 1
-                },
-                GameResponse {
-                    number: vec![5, 7, 12, 15],
-                    bonus: 1,
-                    multiplier: Decimal::from_str("5").unwrap(),
-                    resolved: false,
-                    game_id: 0
-                }
-            ]
+            vec![GameResponse {
+                number: vec![5, 7, 12, 15],
+                bonus: 1,
+                multiplier: Decimal::from_str("5").unwrap(),
+                resolved: false,
+                game_id: 0
+            },]
         );
     }
 

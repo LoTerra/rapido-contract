@@ -1,4 +1,4 @@
-use crate::state::{BallsRange};
+use crate::state::BallsRange;
 use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
