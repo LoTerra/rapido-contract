@@ -21,8 +21,6 @@ use crate::state::{
     STATE,
 };
 use crate::taxation::deduct_tax;
-use terrand;
-
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
