@@ -530,14 +530,12 @@ fn query_games(
         .range(deps.storage, None, start, Order::Descending)
         .take(limit)
         .map(|pair| {
-            pair.and_then(|(k, game)| {
-                Ok(GameResponse {
-                    number: game.number,
-                    bonus: game.bonus,
-                    multiplier: game.multiplier,
-                    resolved: game.resolved,
-                    game_id: u64::from_be_bytes(k.try_into().unwrap()),
-                })
+            pair.map(|(k, game)| GameResponse {
+                number: game.number,
+                bonus: game.bonus,
+                multiplier: game.multiplier,
+                resolved: game.resolved,
+                game_id: u64::from_be_bytes(k.try_into().unwrap()),
             })
         })
         .collect::<StdResult<Vec<GameResponse>>>()?;

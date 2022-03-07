@@ -122,7 +122,7 @@ pub fn save_game(
     Ok(())
 }
 
-pub fn count_match(game: &Vec<u8>, lottery: &Vec<u8>, set_of_balls: u8) -> u8 {
+pub fn count_match(game: &[u8], lottery: &[u8], set_of_balls: u8) -> u8 {
     let mut count = 0;
     for i in 0..set_of_balls as usize {
         if game[i] == lottery[i] {
