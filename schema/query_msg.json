@@ -72,7 +72,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Query jackpot",
+      "description": "Query lottery",
       "type": "object",
       "required": [
         "lottery_state"
@@ -95,7 +95,7 @@
       "additionalProperties": false
     },
     {
-      "description": "Query all jackpots",
+      "description": "Query all lotteries",
       "type": "object",
       "required": [
         "lotteries_state"

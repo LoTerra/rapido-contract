@@ -53,9 +53,9 @@ pub enum QueryMsg {
         round: u64,
         player: String,
     },
-    /// Query jackpot
+    /// Query lottery
     LotteryState { round: u64 },
-    /// Query all jackpots
+    /// Query all lotteries
     LotteriesState {
         start_after: Option<u64>,
         limit: Option<u32>,
