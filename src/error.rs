@@ -38,6 +38,9 @@ pub enum ContractError {
 
     #[error("The amount you sent is not correct, sent {0}, expected {1}")]
     AmountSentError(Uint128, Uint128),
+
+    #[error("No prize to collect")]
+    NoPrizeToCollect {},
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }

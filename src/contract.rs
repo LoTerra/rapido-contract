@@ -366,6 +366,7 @@ pub fn try_collect(
                 &id.to_be_bytes(),
             ),
         )?;
+
         if !game.resolved {
             let match_amount = count_match(
                 &game.number,
@@ -404,58 +405,60 @@ pub fn try_collect(
         }
     }
 
-    let mut res = Response::new();
-    if !total_amount_to_send.is_zero() {
-        let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
-        let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
-
-        let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: player,
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom.clone(),
-                    amount: total_amount_to_send
-                        .checked_sub(collector_tax_amount)
-                        .unwrap()
-                        .checked_sub(terrand_tax_amount)
-                        .unwrap(),
-                },
-            )?],
-        });
-        res.messages.push(SubMsg::new(msg_prize_payout));
-
-        let msg_fee_collector_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: deps
-                .api
-                .addr_humanize(&config.fee_collector_address)?
-                .to_string(),
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom.clone(),
-                    amount: collector_tax_amount,
-                },
-            )?],
-        });
-        res.messages.push(SubMsg::new(msg_fee_collector_payout));
-
-        // prepare message to pay tax to terrand worker
-        let msg_fee_terrand_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: deps
-                .api
-                .addr_humanize(&lottery.terrand_worker.unwrap())?
-                .to_string(),
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom,
-                    amount: terrand_tax_amount,
-                },
-            )?],
-        });
-        res.messages.push(SubMsg::new(msg_fee_terrand_payout));
+    if total_amount_to_send.is_zero() {
+        return Err(ContractError::NoPrizeToCollect {});
     }
+
+    let mut res = Response::new();
+    let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
+    let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
+
+    let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
+        to_address: player,
+        amount: vec![deduct_tax(
+            &deps.querier,
+            Coin {
+                denom: config.denom.clone(),
+                amount: total_amount_to_send
+                    .checked_sub(collector_tax_amount)
+                    .unwrap()
+                    .checked_sub(terrand_tax_amount)
+                    .unwrap(),
+            },
+        )?],
+    });
+    res.messages.push(SubMsg::new(msg_prize_payout));
+
+    let msg_fee_collector_payout = CosmosMsg::Bank(BankMsg::Send {
+        to_address: deps
+            .api
+            .addr_humanize(&config.fee_collector_address)?
+            .to_string(),
+        amount: vec![deduct_tax(
+            &deps.querier,
+            Coin {
+                denom: config.denom.clone(),
+                amount: collector_tax_amount,
+            },
+        )?],
+    });
+    res.messages.push(SubMsg::new(msg_fee_collector_payout));
+
+    // prepare message to pay tax to terrand worker
+    let msg_fee_terrand_payout = CosmosMsg::Bank(BankMsg::Send {
+        to_address: deps
+            .api
+            .addr_humanize(&lottery.terrand_worker.unwrap())?
+            .to_string(),
+        amount: vec![deduct_tax(
+            &deps.querier,
+            Coin {
+                denom: config.denom,
+                amount: terrand_tax_amount,
+            },
+        )?],
+    });
+    res.messages.push(SubMsg::new(msg_fee_terrand_payout));
 
     res.attributes.push(Attribute::new("method", "try_collect"));
 
@@ -1105,7 +1108,13 @@ mod tests {
             player: "alice".to_string(),
             game_id: vec![0, 1],
         };
-        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("alice", &[]),
+            msg.clone(),
+        )
+        .unwrap();
         let msg_payout = CosmosMsg::Bank(BankMsg::Send {
             to_address: "alice".to_string(),
             amount: vec![Coin {
@@ -1135,6 +1144,9 @@ mod tests {
                 SubMsg::new(msg_fee_worker)
             ]
         );
+        // Collect again error with no prize
+        let err = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap_err();
+        assert_eq!(err, ContractError::NoPrizeToCollect {});
 
         let msg = ExecuteMsg::Collect {
             round: 0,
