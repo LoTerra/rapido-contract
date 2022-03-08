@@ -7,7 +7,6 @@
     "bonus_range_min",
     "bonus_set_of_balls",
     "denom",
-    "draw_time",
     "fee_collector",
     "fee_collector_address",
     "fee_collector_terrand",
@@ -39,11 +38,6 @@
     },
     "denom": {
       "type": "string"
-    },
-    "draw_time": {
-      "type": "integer",
-      "format": "uint64",
-      "minimum": 0.0
     },
     "fee_collector": {
       "$ref": "#/definitions/Decimal"
