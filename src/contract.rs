@@ -610,7 +610,6 @@ mod tests {
     fn default_init(deps: DepsMut) {
         let msg = InstantiateMsg {
             denom: "uusd".to_string(),
-            draw_time: 0,
             frequency: 300,
             fee_collector: Decimal::from_str("0.05").unwrap(),
             fee_collector_address: "STAKING".to_string(),
