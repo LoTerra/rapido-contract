@@ -122,7 +122,7 @@ pub fn try_register(
     info: MessageInfo,
     numbers: Vec<u8>,
     multiplier: Uint128,
-    live_round: u8,
+    live_round: u16,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
@@ -229,6 +229,16 @@ pub fn try_register(
                         total_spent: multiplier,
                     },
                 )?;
+                LOTTERY_STATE.update(deps.storage, &state.round.to_be_bytes(), |lottery_state| -> Result<_, ContractError>{
+                    let mut update_lottery_state = lottery_state.unwrap();
+
+                    if update_lottery_state.counter_player.is_none(){
+                        update_lottery_state.counter_player = Some(1)
+                    }else {
+                        update_lottery_state.counter_player = update_lottery_state.counter_player.unwrap().checked_add(1)
+                    }
+                    Ok(update_lottery_state)
+                })?;
             }
             Some(game_stats) => {
                 save_game(
@@ -358,7 +368,6 @@ pub fn try_collect(
     if lottery.winning_number.is_none() && lottery.bonus_number.is_none() {
         return Err(ContractError::LotteryInProgress {});
     }
-    println!("{:?}, {:?}", lottery.bonus_number, lottery.winning_number);
 
     let mut total_amount_to_send = Uint128::zero();
     for id in game_id {

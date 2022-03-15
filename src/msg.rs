@@ -19,7 +19,7 @@ pub struct InstantiateMsg {
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
     pub multiplier: Vec<Decimal>,
-    pub live_round_max: u8,
+    pub live_round_max: u16,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -28,7 +28,7 @@ pub enum ExecuteMsg {
     Register {
         numbers: Vec<u8>,
         multiplier: Uint128,
-        live_round: u8,
+        live_round: u16,
         address: Option<String>,
     },
     Draw {},
