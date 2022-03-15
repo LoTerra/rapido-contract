@@ -236,7 +236,7 @@ pub fn try_register(
                     round,
                     &address_raw,
                     numbers.clone(),
-                    multiplier_decimal.clone(),
+                    multiplier_decimal,
                     Some(game_stats),
                 )?;
 
@@ -628,12 +628,10 @@ fn query_game_stats(
         .range(deps.storage, None, start, Order::Descending)
         .take(limit)
         .map(|pair| {
-            pair.and_then(|(k, game_stats)| {
-                Ok(GameStatsResponse {
-                    total_ticket: game_stats.total_ticket,
-                    total_spent: game_stats.total_spent,
-                    game_stats_id: u64::from_be_bytes(k.try_into().unwrap()),
-                })
+            pair.map(|(k, game_stats)| GameStatsResponse {
+                total_ticket: game_stats.total_ticket,
+                total_spent: game_stats.total_spent,
+                game_stats_id: u64::from_be_bytes(k.try_into().unwrap()),
             })
         })
         .collect::<StdResult<Vec<GameStatsResponse>>>()?;
