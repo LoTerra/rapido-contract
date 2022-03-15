@@ -66,6 +66,10 @@ pub enum QueryMsg {
         start_after: Option<u64>,
         limit: Option<u32>,
     },
+    /// Query lottery stats by round
+    LotteryStats {
+        round: u64,
+    },
     // /// Get a game from player
     // GameStats {round: u64, player: String}
 }
@@ -112,7 +116,6 @@ pub struct LotteryResponse {
     pub terrand_worker: Option<String>,
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
-    pub counter_player: Option<u64>,
     pub multiplier: Vec<Decimal>,
     pub winning_number: Option<Vec<u8>>,
     pub bonus_number: Option<u8>,
@@ -124,6 +127,14 @@ pub struct GameStatsResponse {
     pub total_ticket: u64,
     pub total_spent: Uint128,
     pub game_stats_id: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct LotteryStatsResponse {
+    pub counter_player: Option<u64>,
+    pub total_ticket_sold: Option<u64>,
+    pub total_collected: Option<Uint128>,
+    pub lottery_stats_id: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

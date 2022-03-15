@@ -41,12 +41,20 @@ pub struct LotteryState {
     pub terrand_worker: Option<CanonicalAddr>,
     pub prize_rank: Vec<Uint128>,
     pub ticket_price: Vec<Uint128>,
-    pub counter_player: Option<u64>,
     pub multiplier: Vec<Decimal>,
     pub winning_number: Option<Vec<u8>>,
     pub bonus_number: Option<u8>,
 }
 pub const LOTTERY_STATE: Map<&[u8], LotteryState> = Map::new("lottery_state");
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct LotteryStats {
+    pub counter_player: Option<u64>,
+    pub total_ticket_sold: Option<u64>,
+    pub total_collected: Option<Uint128>,
+}
+pub const LOTTERY_STATS: Map<&[u8], LotteryStats> = Map::new("lottery_stats");
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Game {
