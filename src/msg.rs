@@ -60,6 +60,12 @@ pub enum QueryMsg {
         start_after: Option<u64>,
         limit: Option<u32>,
     },
+    /// Query game stats by address
+    GameStats {
+        player: String,
+        start_after: Option<u64>,
+        limit: Option<u32>,
+    },
     // /// Get a game from player
     // GameStats {round: u64, player: String}
 }
@@ -96,6 +102,7 @@ pub struct GameResponse {
     pub multiplier: Decimal,
     pub resolved: bool,
     pub game_id: u64,
+    pub lottery_id: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -111,3 +118,13 @@ pub struct LotteryResponse {
     pub bonus_number: Option<u8>,
     pub lottery_id: u64,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct GameStatsResponse {
+    pub total_ticket: u64,
+    pub total_spent: Uint128,
+    pub game_stats_id: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsg {}

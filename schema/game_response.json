@@ -5,6 +5,7 @@
   "required": [
     "bonus",
     "game_id",
+    "lottery_id",
     "multiplier",
     "number",
     "resolved"
@@ -16,6 +17,11 @@
       "minimum": 0.0
     },
     "game_id": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "lottery_id": {
       "type": "integer",
       "format": "uint64",
       "minimum": 0.0

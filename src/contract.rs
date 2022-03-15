@@ -9,12 +9,13 @@ use cw_storage_plus::Bound;
 use std::convert::TryInto;
 use std::ops::Mul;
 use std::str::FromStr;
+use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, GameResponse, InstantiateMsg, LotteryResponse, QueryMsg,
-    StateResponse,
+    ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
+    QueryMsg, StateResponse,
 };
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS, LOTTERY_STATE,
@@ -209,7 +210,7 @@ pub fn try_register(
         rounds_info.push(round.to_string());
         match GAMES_STATS.may_load(
             deps.storage,
-            (&round.to_be_bytes(), &address_raw.as_slice()),
+            (&address_raw.as_slice(), &round.to_be_bytes()),
         )? {
             None => {
                 save_game(
@@ -222,10 +223,10 @@ pub fn try_register(
                 )?;
                 GAMES_STATS.save(
                     deps.storage,
-                    (&round.to_be_bytes(), &address_raw.as_slice()),
+                    (&address_raw.as_slice(), &round.to_be_bytes()),
                     &GameStats {
                         total_ticket: 1,
-                        total_spent: sent,
+                        total_spent: multiplier,
                     },
                 )?;
             }
@@ -235,17 +236,19 @@ pub fn try_register(
                     round,
                     &address_raw,
                     numbers.clone(),
-                    multiplier_decimal,
+                    multiplier_decimal.clone(),
                     Some(game_stats),
                 )?;
 
                 GAMES_STATS.update(
                     deps.storage,
-                    (&round.to_be_bytes(), &address_raw.as_slice()),
+                    (&address_raw.as_slice(), &round.to_be_bytes()),
                     |game_stats| -> Result<_, ContractError> {
                         let mut update_game_stats = game_stats.unwrap();
-                        update_game_stats.total_spent =
-                            update_game_stats.total_spent.checked_add(sent).unwrap();
+                        update_game_stats.total_spent = update_game_stats
+                            .total_spent
+                            .checked_add(multiplier)
+                            .unwrap();
                         update_game_stats.total_ticket += 1;
                         Ok(update_game_stats)
                     },
@@ -355,6 +358,7 @@ pub fn try_collect(
     if lottery.winning_number.is_none() && lottery.bonus_number.is_none() {
         return Err(ContractError::LotteryInProgress {});
     }
+    println!("{:?}, {:?}", lottery.bonus_number, lottery.winning_number);
 
     let mut total_amount_to_send = Uint128::zero();
     for id in game_id {
@@ -405,60 +409,59 @@ pub fn try_collect(
         }
     }
 
-    if total_amount_to_send.is_zero() {
-        return Err(ContractError::NoPrizeToCollect {});
-    }
-
     let mut res = Response::new();
-    let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
-    let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
 
-    let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
-        to_address: player,
-        amount: vec![deduct_tax(
-            &deps.querier,
-            Coin {
-                denom: config.denom.clone(),
-                amount: total_amount_to_send
-                    .checked_sub(collector_tax_amount)
-                    .unwrap()
-                    .checked_sub(terrand_tax_amount)
-                    .unwrap(),
-            },
-        )?],
-    });
-    res.messages.push(SubMsg::new(msg_prize_payout));
+    if !total_amount_to_send.is_zero() {
+        let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
+        let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
 
-    let msg_fee_collector_payout = CosmosMsg::Bank(BankMsg::Send {
-        to_address: deps
-            .api
-            .addr_humanize(&config.fee_collector_address)?
-            .to_string(),
-        amount: vec![deduct_tax(
-            &deps.querier,
-            Coin {
-                denom: config.denom.clone(),
-                amount: collector_tax_amount,
-            },
-        )?],
-    });
-    res.messages.push(SubMsg::new(msg_fee_collector_payout));
+        let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: player,
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom.clone(),
+                    amount: total_amount_to_send
+                        .checked_sub(collector_tax_amount)
+                        .unwrap()
+                        .checked_sub(terrand_tax_amount)
+                        .unwrap(),
+                },
+            )?],
+        });
+        res.messages.push(SubMsg::new(msg_prize_payout));
 
-    // prepare message to pay tax to terrand worker
-    let msg_fee_terrand_payout = CosmosMsg::Bank(BankMsg::Send {
-        to_address: deps
-            .api
-            .addr_humanize(&lottery.terrand_worker.unwrap())?
-            .to_string(),
-        amount: vec![deduct_tax(
-            &deps.querier,
-            Coin {
-                denom: config.denom,
-                amount: terrand_tax_amount,
-            },
-        )?],
-    });
-    res.messages.push(SubMsg::new(msg_fee_terrand_payout));
+        let msg_fee_collector_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: deps
+                .api
+                .addr_humanize(&config.fee_collector_address)?
+                .to_string(),
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom.clone(),
+                    amount: collector_tax_amount,
+                },
+            )?],
+        });
+        res.messages.push(SubMsg::new(msg_fee_collector_payout));
+
+        // prepare message to pay tax to terrand worker
+        let msg_fee_terrand_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: deps
+                .api
+                .addr_humanize(&lottery.terrand_worker.unwrap())?
+                .to_string(),
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom,
+                    amount: terrand_tax_amount,
+                },
+            )?],
+        });
+        res.messages.push(SubMsg::new(msg_fee_terrand_payout));
+    }
 
     res.attributes.push(Attribute::new("method", "try_collect"));
 
@@ -480,6 +483,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::LotteriesState { start_after, limit } => {
             to_binary(&query_lotteries_state(deps, start_after, limit)?)
         }
+        QueryMsg::GameStats {
+            player,
+            start_after,
+            limit,
+        } => to_binary(&query_game_stats(deps, player, start_after, limit)?),
     }
 }
 
@@ -539,6 +547,7 @@ fn query_games(
                 multiplier: game.multiplier,
                 resolved: game.resolved,
                 game_id: u64::from_be_bytes(k.try_into().unwrap()),
+                lottery_id: round,
             })
         })
         .collect::<StdResult<Vec<GameResponse>>>()?;
@@ -574,7 +583,7 @@ fn query_lotteries_state(
     let start = start_after.map(|d| Bound::Exclusive(d.to_be_bytes().to_vec()));
 
     let lotteries = LOTTERY_STATE
-        .range(deps.storage, None, start, Order::Descending)
+        .range(deps.storage, start, None, Order::Ascending)
         .take(limit)
         .map(|pair| {
             pair.and_then(|(k, lottery)| {
@@ -602,6 +611,40 @@ fn query_lotteries_state(
 
     Ok(lotteries)
 }
+
+fn query_game_stats(
+    deps: Deps,
+    player: String,
+    start_after: Option<u64>,
+    limit: Option<u32>,
+) -> StdResult<Vec<GameStatsResponse>> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let start = start_after.map(|d| Bound::Exclusive(d.to_be_bytes().to_vec()));
+
+    let owner_addr = deps.api.addr_validate(&player)?;
+    let raw_address = deps.api.addr_canonicalize(&owner_addr.as_str())?;
+    let game_stats = GAMES_STATS
+        .prefix(&raw_address.as_slice())
+        .range(deps.storage, None, start, Order::Descending)
+        .take(limit)
+        .map(|pair| {
+            pair.and_then(|(k, game_stats)| {
+                Ok(GameStatsResponse {
+                    total_ticket: game_stats.total_ticket,
+                    total_spent: game_stats.total_spent,
+                    game_stats_id: u64::from_be_bytes(k.try_into().unwrap()),
+                })
+            })
+        })
+        .collect::<StdResult<Vec<GameStatsResponse>>>()?;
+
+    Ok(game_stats)
+}
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    Ok(Response::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,14 +864,16 @@ mod tests {
                     bonus: 4,
                     multiplier: Decimal::from_str("1").unwrap(),
                     resolved: false,
-                    game_id: 1
+                    game_id: 1,
+                    lottery_id: 0
                 },
                 GameResponse {
                     number: vec![5, 7, 12, 15],
                     bonus: 1,
                     multiplier: Decimal::from_str("5").unwrap(),
                     resolved: false,
-                    game_id: 0
+                    game_id: 0,
+                    lottery_id: 0
                 }
             ]
         );
@@ -840,7 +885,8 @@ mod tests {
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
-                game_id: 0
+                game_id: 0,
+                lottery_id: 1
             }]
         );
         let games = query_games(deps.as_ref(), None, None, 2, "alice".to_string()).unwrap();
@@ -851,7 +897,8 @@ mod tests {
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
-                game_id: 0
+                game_id: 0,
+                lottery_id: 2
             }]
         );
         let games = query_games(deps.as_ref(), None, None, 3, "alice".to_string()).unwrap();
@@ -862,7 +909,8 @@ mod tests {
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
-                game_id: 0
+                game_id: 0,
+                lottery_id: 3
             }]
         );
 
@@ -925,7 +973,8 @@ mod tests {
                 bonus: 1,
                 multiplier: Decimal::from_str("5").unwrap(),
                 resolved: false,
-                game_id: 0
+                game_id: 0,
+                lottery_id: 0
             },]
         );
     }
@@ -961,7 +1010,7 @@ mod tests {
         let past_lottery_state = query_lottery_state(deps.as_ref(), 0).unwrap();
         assert_eq!(past_lottery_state.terrand_round, 12);
         assert_eq!(past_lottery_state.draw_time, 1595431350);
-        assert_eq!(past_lottery_state.bonus_number, Some(3));
+        assert_eq!(past_lottery_state.bonus_number, Some(7));
         assert_eq!(past_lottery_state.winning_number, Some(vec![4, 15, 6, 4]));
         assert_eq!(
             past_lottery_state.multiplier,
@@ -1058,7 +1107,7 @@ mod tests {
             }],
         );
         let msg = ExecuteMsg::Register {
-            numbers: vec![4, 15, 6, 4, 3],
+            numbers: vec![4, 15, 6, 4, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
@@ -1074,7 +1123,7 @@ mod tests {
             }],
         );
         let msg = ExecuteMsg::Register {
-            numbers: vec![4, 15, 6, 5, 3],
+            numbers: vec![4, 15, 6, 5, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
@@ -1145,8 +1194,8 @@ mod tests {
             ]
         );
         // Collect again error with no prize
-        let err = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap_err();
-        assert_eq!(err, ContractError::NoPrizeToCollect {});
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        assert_eq!(res.messages.len(), 0);
 
         let msg = ExecuteMsg::Collect {
             round: 0,
