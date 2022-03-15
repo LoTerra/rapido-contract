@@ -55,7 +55,6 @@ pub struct LotteryStats {
 }
 pub const LOTTERY_STATS: Map<&[u8], LotteryStats> = Map::new("lottery_stats");
 
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Game {
     pub number: Vec<u8>,

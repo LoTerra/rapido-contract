@@ -67,9 +67,7 @@ pub enum QueryMsg {
         limit: Option<u32>,
     },
     /// Query lottery stats by round
-    LotteryStats {
-        round: u64,
-    },
+    LotteryStats { round: u64 },
     // /// Get a game from player
     // GameStats {round: u64, player: String}
 }

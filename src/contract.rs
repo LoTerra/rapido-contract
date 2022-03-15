@@ -13,8 +13,14 @@ use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
-use crate::msg::{ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse, LotteryStatsResponse, QueryMsg, StateResponse};
-use crate::state::{BallsRange, Config, GameStats, LotteryState, State, CONFIG, GAMES, GAMES_STATS, LOTTERY_STATE, STATE, LOTTERY_STATS, LotteryStats};
+use crate::msg::{
+    ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
+    LotteryStatsResponse, QueryMsg, StateResponse,
+};
+use crate::state::{
+    BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
+    LOTTERY_STATE, LOTTERY_STATS, STATE,
+};
 use crate::taxation::deduct_tax;
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
@@ -225,38 +231,55 @@ pub fn try_register(
 
                 match LOTTERY_STATS.may_load(deps.storage, &round.to_be_bytes())? {
                     None => {
-                        LOTTERY_STATS.save(deps.storage, &round.to_be_bytes(), &LotteryStats{
-                            counter_player: Some(1),
-                            total_ticket_sold: Some(1),
-                            total_collected: Some(multiplier)
-                        })?;
+                        LOTTERY_STATS.save(
+                            deps.storage,
+                            &round.to_be_bytes(),
+                            &LotteryStats {
+                                counter_player: Some(1),
+                                total_ticket_sold: Some(1),
+                                total_collected: Some(multiplier),
+                            },
+                        )?;
                     }
                     Some(_) => {
-                        LOTTERY_STATS.update(deps.storage, &round.to_be_bytes(), |lottery_stats| -> Result<_, ContractError>{
-                            let mut update_lottery_stats = lottery_stats.unwrap();
+                        LOTTERY_STATS.update(
+                            deps.storage,
+                            &round.to_be_bytes(),
+                            |lottery_stats| -> Result<_, ContractError> {
+                                let mut update_lottery_stats = lottery_stats.unwrap();
 
-                            if update_lottery_stats.counter_player.is_none(){
-                                update_lottery_stats.counter_player = Some(1);
-                            }else {
-                                update_lottery_stats.counter_player = update_lottery_stats.counter_player.unwrap().checked_add(1);
-                            }
+                                if update_lottery_stats.counter_player.is_none() {
+                                    update_lottery_stats.counter_player = Some(1);
+                                } else {
+                                    update_lottery_stats.counter_player =
+                                        update_lottery_stats.counter_player.unwrap().checked_add(1);
+                                }
 
-                            if update_lottery_stats.total_ticket_sold.is_none(){
-                                update_lottery_stats.total_ticket_sold = Some(1);
-                            }else {
-                                update_lottery_stats.total_ticket_sold = update_lottery_stats.total_ticket_sold.unwrap().checked_add(1);
-                            }
-                            if update_lottery_stats.total_collected.is_none(){
-                                update_lottery_stats.total_collected = Some(multiplier);
-                            }else {
-                                update_lottery_stats.total_collected = Some(update_lottery_stats.total_collected.unwrap().checked_add(multiplier).unwrap());
-                            }
+                                if update_lottery_stats.total_ticket_sold.is_none() {
+                                    update_lottery_stats.total_ticket_sold = Some(1);
+                                } else {
+                                    update_lottery_stats.total_ticket_sold = update_lottery_stats
+                                        .total_ticket_sold
+                                        .unwrap()
+                                        .checked_add(1);
+                                }
+                                if update_lottery_stats.total_collected.is_none() {
+                                    update_lottery_stats.total_collected = Some(multiplier);
+                                } else {
+                                    update_lottery_stats.total_collected = Some(
+                                        update_lottery_stats
+                                            .total_collected
+                                            .unwrap()
+                                            .checked_add(multiplier)
+                                            .unwrap(),
+                                    );
+                                }
 
-                            Ok(update_lottery_stats)
-                        })?;
+                                Ok(update_lottery_stats)
+                            },
+                        )?;
                     }
                 }
-
             }
             Some(game_stats) => {
                 save_game(
@@ -282,32 +305,48 @@ pub fn try_register(
                     },
                 )?;
 
-
                 match LOTTERY_STATS.may_load(deps.storage, &round.to_be_bytes())? {
                     None => {
-                        LOTTERY_STATS.save(deps.storage, &round.to_be_bytes(), &LotteryStats{
-                            counter_player: Some(1),
-                            total_ticket_sold: Some(1),
-                            total_collected: Some(multiplier)
-                        })?;
+                        LOTTERY_STATS.save(
+                            deps.storage,
+                            &round.to_be_bytes(),
+                            &LotteryStats {
+                                counter_player: Some(1),
+                                total_ticket_sold: Some(1),
+                                total_collected: Some(multiplier),
+                            },
+                        )?;
                     }
                     Some(_) => {
-                        LOTTERY_STATS.update(deps.storage, &round.to_be_bytes(), |lottery_stats| -> Result<_, ContractError>{
-                            let mut update_lottery_stats = lottery_stats.unwrap();
+                        LOTTERY_STATS.update(
+                            deps.storage,
+                            &round.to_be_bytes(),
+                            |lottery_stats| -> Result<_, ContractError> {
+                                let mut update_lottery_stats = lottery_stats.unwrap();
 
-                            if update_lottery_stats.total_ticket_sold.is_none(){
-                                update_lottery_stats.total_ticket_sold = Some(1);
-                            }else {
-                                update_lottery_stats.total_ticket_sold = update_lottery_stats.total_ticket_sold.unwrap().checked_add(1);
-                            }
-                            if update_lottery_stats.total_collected.is_none(){
-                                update_lottery_stats.total_collected = Some(multiplier);
-                            }else {
-                                update_lottery_stats.total_collected = Some(update_lottery_stats.total_collected.unwrap().checked_add(multiplier).unwrap());
-                            }
+                                if update_lottery_stats.total_ticket_sold.is_none() {
+                                    update_lottery_stats.total_ticket_sold = Some(1);
+                                } else {
+                                    update_lottery_stats.total_ticket_sold = update_lottery_stats
+                                        .total_ticket_sold
+                                        .unwrap()
+                                        .checked_add(1);
+                                }
+                                if update_lottery_stats.total_collected.is_none() {
+                                    update_lottery_stats.total_collected = Some(multiplier);
+                                } else {
+                                    update_lottery_stats.total_collected = Some(
+                                        update_lottery_stats
+                                            .total_collected
+                                            .unwrap()
+                                            .checked_add(multiplier)
+                                            .unwrap(),
+                                    );
+                                }
 
-                            Ok(update_lottery_stats)
-                        })?;
+                                Ok(update_lottery_stats)
+                            },
+                        )?;
                     }
                 }
             }
@@ -346,7 +385,8 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
             contract_addr: terrand_human.to_string(),
             msg: to_binary(&msg)?,
         };
-        let terrand_randomness: terrand::msg::GetRandomResponse = deps.querier.query(&query.into())?;
+        let terrand_randomness: terrand::msg::GetRandomResponse =
+            deps.querier.query(&query.into())?;
         let randomness_hash: String = hex::encode(terrand_randomness.randomness.as_slice());
         // let x = random_number(randomness_hash.clone(), state.set_of_balls, state.range.max);
 
@@ -546,7 +586,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_after,
             limit,
         } => to_binary(&query_game_stats(deps, player, start_after, limit)?),
-        QueryMsg::LotteryStats { round } => to_binary(&query_lottery_stats(deps,round)?),
+        QueryMsg::LotteryStats { round } => to_binary(&query_lottery_stats(deps, round)?),
     }
 }
 
@@ -696,27 +736,22 @@ fn query_game_stats(
     Ok(game_stats)
 }
 
-
-fn query_lottery_stats(
-    deps: Deps,
-    round: u64
-) -> StdResult<LotteryStatsResponse> {
-
+fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse> {
     let lottery_stats = LOTTERY_STATS.may_load(deps.storage, &round.to_be_bytes())?;
 
     let lottery_stats = match lottery_stats {
-        None => LotteryStatsResponse{
+        None => LotteryStatsResponse {
             counter_player: None,
             total_ticket_sold: None,
             total_collected: None,
-            lottery_stats_id: round
+            lottery_stats_id: round,
         },
-        Some(lottery_stats) => LotteryStatsResponse{
+        Some(lottery_stats) => LotteryStatsResponse {
             counter_player: lottery_stats.counter_player,
             total_ticket_sold: lottery_stats.total_ticket_sold,
             total_collected: lottery_stats.total_collected,
-            lottery_stats_id: round
-        }
+            lottery_stats_id: round,
+        },
     };
 
     Ok(lottery_stats)
@@ -1174,13 +1209,13 @@ mod tests {
         let msg = ExecuteMsg::Draw {};
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
         let lottery_stats = query_lottery_stats(deps.as_ref(), 1).unwrap();
-        println!("{:?}",lottery_stats);
+        println!("{:?}", lottery_stats);
         let new_lottery_state = query_lottery_state(deps.as_ref(), 1).unwrap();
         assert_eq!(new_lottery_state.bonus_number, Some(7));
         assert_eq!(new_lottery_state.winning_number, Some(vec![4, 15, 6, 4]));
 
         let lottery_stats = query_lottery_stats(deps.as_ref(), 2).unwrap();
-        println!("{:?}",lottery_stats);
+        println!("{:?}", lottery_stats);
         let new_lottery_state = query_lottery_state(deps.as_ref(), 2).unwrap();
 
         assert_eq!(new_lottery_state.bonus_number, None);
