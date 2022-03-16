@@ -19,14 +19,6 @@
       "format": "uint8",
       "minimum": 0.0
     },
-    "counter_player": {
-      "type": [
-        "integer",
-        "null"
-      ],
-      "format": "uint64",
-      "minimum": 0.0
-    },
     "draw_time": {
       "type": "integer",
       "format": "uint64",

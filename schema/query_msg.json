@@ -161,6 +161,29 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Query lottery stats by round",
+      "type": "object",
+      "required": [
+        "lottery_stats"
+      ],
+      "properties": {
+        "lottery_stats": {
+          "type": "object",
+          "required": [
+            "round"
+          ],
+          "properties": {
+            "round": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }
