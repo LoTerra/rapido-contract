@@ -478,15 +478,21 @@ pub fn try_collect(
             let bonus = lottery.bonus_number.unwrap() == game.bonus;
 
             let prize = match match_amount {
-                1 if !bonus => state.prize_rank[0],
-                1 if bonus => state.prize_rank[1],
-                2 if !bonus => state.prize_rank[2],
-                2 if bonus => state.prize_rank[3],
-                3 if !bonus => state.prize_rank[4],
-                3 if bonus => state.prize_rank[5],
-                4 if !bonus => state.prize_rank[6],
-                4 if bonus => state.prize_rank[7],
-                _ => Uint128::zero(),
+                1 if !bonus => state.prize_rank[1],
+                1 if bonus => state.prize_rank[2],
+                2 if !bonus => state.prize_rank[3],
+                2 if bonus => state.prize_rank[4],
+                3 if !bonus => state.prize_rank[5],
+                3 if bonus => state.prize_rank[6],
+                4 if !bonus => state.prize_rank[7],
+                4 if bonus => state.prize_rank[8],
+                _ => {
+                    if bonus {
+                        state.prize_rank[0]
+                    } else {
+                        Uint128::zero()
+                    }
+                }
             };
             let price_multiplier = prize.mul(game.multiplier);
             total_amount_to_send = total_amount_to_send.checked_add(price_multiplier).unwrap();
@@ -786,6 +792,7 @@ mod tests {
             bonus_range_max: 8,
             prize_rank: vec![
                 Uint128::from(1_000_000u128),
+                Uint128::from(2_000_000u128),
                 Uint128::from(5_000_000u128),
                 Uint128::from(10_000_000u128),
                 Uint128::from(30_000_000u128),
@@ -1136,6 +1143,7 @@ mod tests {
             past_lottery_state.prize_rank,
             vec![
                 Uint128::from(1000000u128),
+                Uint128::from(2000000u128),
                 Uint128::from(5000000u128),
                 Uint128::from(10000000u128),
                 Uint128::from(30000000u128),
@@ -1171,6 +1179,7 @@ mod tests {
             new_lottery_state.prize_rank,
             vec![
                 Uint128::from(1000000u128),
+                Uint128::from(2000000u128),
                 Uint128::from(5000000u128),
                 Uint128::from(10000000u128),
                 Uint128::from(30000000u128),
@@ -1285,6 +1294,52 @@ mod tests {
         let msg = ExecuteMsg::Register {
             numbers: vec![4, 15, 6, 2, 2],
             multiplier: Uint128::from(2_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        // Mario 0 numbers found and 1 bonus refund
+        let sender = mock_info(
+            "mario",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(1_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![1, 1, 1, 1, 7],
+            multiplier: Uint128::from(1_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+        // Mario 0 numbers found and 1 bonus refund
+        let sender = mock_info(
+            "mario",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(1_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![4, 1, 1, 1, 1],
+            multiplier: Uint128::from(1_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+        // Mario 0 numbers found
+        let sender = mock_info(
+            "mario",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(1_000_000u128),
+            }],
+        );
+        let msg = ExecuteMsg::Register {
+            numbers: vec![1, 1, 1, 1, 1],
+            multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
         };
@@ -1412,6 +1467,88 @@ mod tests {
                 SubMsg::new(msg_fee_worker)
             ]
         );
+
+        // Win a refund
+        let msg = ExecuteMsg::Collect {
+            round: 0,
+            player: "mario".to_string(),
+            game_id: vec![0],
+        };
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "mario".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(930_693u128),
+            }],
+        });
+        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "STAKING".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(49_504u128),
+            }],
+        });
+        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "worker".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(9_900u128),
+            }],
+        });
+        assert_eq!(
+            res.messages,
+            vec![
+                SubMsg::new(msg_payout),
+                SubMsg::new(msg_fee_collector),
+                SubMsg::new(msg_fee_worker)
+            ]
+        );
+        // Win 2UST
+        let msg = ExecuteMsg::Collect {
+            round: 0,
+            player: "mario".to_string(),
+            game_id: vec![1],
+        };
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "mario".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(1_861_386u128),
+            }],
+        });
+        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "STAKING".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(99_009u128),
+            }],
+        });
+        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "worker".to_string(),
+            amount: vec![Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(19_801u128),
+            }],
+        });
+        assert_eq!(
+            res.messages,
+            vec![
+                SubMsg::new(msg_payout),
+                SubMsg::new(msg_fee_collector),
+                SubMsg::new(msg_fee_worker)
+            ]
+        );
+
+        // Win 0UST
+        let msg = ExecuteMsg::Collect {
+            round: 0,
+            player: "mario".to_string(),
+            game_id: vec![2],
+        };
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        assert_eq!(res.messages.len(), 0);
 
         // Error too soon to collect
         let msg = ExecuteMsg::Collect {
