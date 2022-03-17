@@ -764,7 +764,20 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    let mut state = STATE.load(deps.storage)?;
+    state.prize_rank = vec![
+        Uint128::from(1_000_000u128),
+        Uint128::from(2_000_000u128),
+        Uint128::from(5_000_000u128),
+        Uint128::from(10_000_000u128),
+        Uint128::from(30_000_000u128),
+        Uint128::from(50_000_000u128),
+        Uint128::from(150_000_000u128),
+        Uint128::from(1_000_000_000u128),
+        Uint128::from(10_000_000_000u128),
+    ];
+    STATE.save(deps.storage, &state)?;
     Ok(Response::default())
 }
 
