@@ -478,6 +478,7 @@ pub fn try_collect(
             let bonus = lottery.bonus_number.unwrap() == game.bonus;
 
             let prize = match match_amount {
+                0 if bonus => state.prize_rank[0],
                 1 if !bonus => state.prize_rank[1],
                 1 if bonus => state.prize_rank[2],
                 2 if !bonus => state.prize_rank[3],
@@ -486,13 +487,7 @@ pub fn try_collect(
                 3 if bonus => state.prize_rank[6],
                 4 if !bonus => state.prize_rank[7],
                 4 if bonus => state.prize_rank[8],
-                _ => {
-                    if bonus {
-                        state.prize_rank[0]
-                    } else {
-                        Uint128::zero()
-                    }
-                }
+                _ => Uint128::zero(),
             };
             let price_multiplier = prize.mul(game.multiplier);
             total_amount_to_send = total_amount_to_send.checked_add(price_multiplier).unwrap();
