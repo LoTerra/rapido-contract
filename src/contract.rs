@@ -69,8 +69,12 @@ pub fn instantiate(
 
     // calculate next round randomness from now
     let draw_time = env.block.time.plus_seconds(config.frequency).seconds();
-    let from_genesis = draw_time - DRAND_GENESIS_TIME;
-    let next_round = (from_genesis / DRAND_PERIOD) + DRAND_NEXT_ROUND_SECURITY;
+    let from_genesis = draw_time.checked_sub(DRAND_GENESIS_TIME).unwrap();
+    let next_round = from_genesis
+        .checked_div(DRAND_PERIOD)
+        .unwrap()
+        .checked_add(DRAND_NEXT_ROUND_SECURITY)
+        .unwrap();
 
     LOTTERY_STATE.save(
         deps.storage,
@@ -785,20 +789,20 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    let mut state = STATE.load(deps.storage)?;
-    state.prize_rank = vec![
-        Uint128::from(1_000_000u128),
-        Uint128::from(2_000_000u128),
-        Uint128::from(5_000_000u128),
-        Uint128::from(10_000_000u128),
-        Uint128::from(30_000_000u128),
-        Uint128::from(50_000_000u128),
-        Uint128::from(150_000_000u128),
-        Uint128::from(1_000_000_000u128),
-        Uint128::from(10_000_000_000u128),
-    ];
-    STATE.save(deps.storage, &state)?;
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    // let mut state = STATE.load(deps.storage)?;
+    // state.prize_rank = vec![
+    //     Uint128::from(2_000_000u128),
+    //     Uint128::from(1_000_000u128),
+    //     Uint128::from(5_000_000u128),
+    //     Uint128::from(10_000_000u128),
+    //     Uint128::from(30_000_000u128),
+    //     Uint128::from(50_000_000u128),
+    //     Uint128::from(150_000_000u128),
+    //     Uint128::from(1_000_000_000u128),
+    //     Uint128::from(10_000_000_000u128),
+    // ];
+    // STATE.save(deps.storage, &state)?;
     Ok(Response::default())
 }
 
