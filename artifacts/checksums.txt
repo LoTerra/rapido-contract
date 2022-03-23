@@ -1,1 +1,1 @@
-7e18ac61e216cc75d5ddaaa3df84e16488dc6eeac2b3e26dfc09658856f83d30  loterra_v2.wasm
+253cb8ce8dedd78e3a982f8dac9a88accbe0306dc22f8f197865a9bba9c43b49  loterra_v2.wasm
