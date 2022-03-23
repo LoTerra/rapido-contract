@@ -27,7 +27,7 @@ const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DRAND_GENESIS_TIME: u64 = 1595431050;
 const DRAND_PERIOD: u64 = 30;
-const DRAND_NEXT_ROUND_SECURITY: u64 = 2;
+const DRAND_NEXT_ROUND_SECURITY: u64 = 3;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -379,6 +379,7 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
         return Err(ContractError::LotteryInProgress {});
     }
 
+    let mut msgs = vec![];
     if lottery_stats.is_some() {
         // Query terrand for the randomness
         let msg = terrand::msg::QueryMsg::GetRandomness {
@@ -411,6 +412,19 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
                 Ok(update_lottery_state)
             },
         )?;
+
+        let randomness_fee = CosmosMsg::Bank(BankMsg::Send {
+            to_address: terrand_randomness.worker,
+            amount: vec![deduct_tax(
+                &deps.querier,
+                Coin {
+                    denom: config.denom.clone(),
+                    amount: Uint128::from(1_000_000u128),
+                },
+            )?],
+        });
+
+        msgs.push(randomness_fee)
     }
 
     // Update state & save
@@ -419,8 +433,12 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
 
     // calculate next round randomness from now
     let draw_time = env.block.time.plus_seconds(config.frequency).seconds();
-    let from_genesis = draw_time - DRAND_GENESIS_TIME;
-    let next_round = (from_genesis / DRAND_PERIOD) + DRAND_NEXT_ROUND_SECURITY;
+    let from_genesis = draw_time.checked_sub(DRAND_GENESIS_TIME).unwrap();
+    let next_round = from_genesis
+        .checked_div(DRAND_PERIOD)
+        .unwrap()
+        .checked_add(DRAND_NEXT_ROUND_SECURITY)
+        .unwrap();
 
     // Create new lottery
     LOTTERY_STATE.save(
@@ -439,6 +457,7 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
     )?;
 
     Ok(Response::new()
+        .add_messages(msgs)
         .add_attribute("method", "try_draw")
         .add_attribute("round", state.round.checked_sub(1).unwrap().to_string()))
 }
@@ -790,7 +809,9 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    // let mut state = STATE.load(deps.storage)?;
+    //let mut config = CONFIG.load(deps.storage)?;
+    //config.fee_collector = Decimal::from_str("0.1").unwrap();
+    //let mut state = STATE.load(deps.storage)?;
     // state.prize_rank = vec![
     //     Uint128::from(2_000_000u128),
     //     Uint128::from(1_000_000u128),
@@ -1199,7 +1220,7 @@ mod tests {
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
 
         let past_lottery_state = query_lottery_state(deps.as_ref(), 0).unwrap();
-        assert_eq!(past_lottery_state.terrand_round, 12);
+        assert_eq!(past_lottery_state.terrand_round, 13);
         assert_eq!(past_lottery_state.draw_time, 1595431350);
         assert_eq!(past_lottery_state.bonus_number, None);
         assert_eq!(past_lottery_state.winning_number, None);
@@ -1235,7 +1256,7 @@ mod tests {
         );
 
         let new_lottery_state = query_lottery_state(deps.as_ref(), 1).unwrap();
-        assert_eq!(new_lottery_state.terrand_round, 22);
+        assert_eq!(new_lottery_state.terrand_round, 23);
         assert_eq!(new_lottery_state.draw_time, 1595431650);
         assert_eq!(new_lottery_state.bonus_number, None);
         assert_eq!(new_lottery_state.winning_number, None);
@@ -1297,6 +1318,12 @@ mod tests {
         env.block.time = env.block.time.plus_seconds(300);
         let msg = ExecuteMsg::Draw {};
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+        let worker_msg = CosmosMsg::Bank(BankMsg::Send {
+            to_address: "worker".to_string(),
+            amount: vec![Coin::new(990_099, "uusd")],
+        });
+        assert_eq!(res.messages, vec![SubMsg::new(worker_msg)]);
+
         let lottery_stats = query_lottery_stats(deps.as_ref(), 1).unwrap();
         println!("{:?}", lottery_stats);
         let new_lottery_state = query_lottery_state(deps.as_ref(), 1).unwrap();
