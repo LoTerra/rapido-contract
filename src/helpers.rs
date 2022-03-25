@@ -111,8 +111,8 @@ pub fn save_game(
             &stats.to_be_bytes(),
         ),
         &Game {
-            number: vec![numbers[0], numbers[1], numbers[2], numbers[3]],
-            bonus: numbers[4],
+            number: vec![numbers[0], numbers[1], numbers[2], numbers[3], numbers[4]],
+            bonus: numbers[5],
             multiplier,
             resolved: false,
         },

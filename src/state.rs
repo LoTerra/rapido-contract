@@ -13,6 +13,7 @@ pub struct Config {
     pub fee_collector_terrand: Decimal,
     pub terrand_address: CanonicalAddr,
     pub live_round_max: u16,
+    pub burn_rate: Decimal
 }
 pub const CONFIG: Item<Config> = Item::new("config");
 

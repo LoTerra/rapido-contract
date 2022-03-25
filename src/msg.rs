@@ -20,6 +20,7 @@ pub struct InstantiateMsg {
     pub ticket_price: Vec<Uint128>,
     pub multiplier: Vec<Decimal>,
     pub live_round_max: u16,
+    pub burn_rate: Decimal
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -44,6 +44,7 @@ pub fn instantiate(
         fee_collector_terrand: msg.fee_collector_terrand,
         terrand_address: deps.api.addr_canonicalize(&msg.terrand_address)?,
         live_round_max: msg.live_round_max,
+        burn_rate: msg.burn_rate
     };
 
     let state = State {
@@ -199,12 +200,12 @@ pub fn try_register(
         return Err(ContractError::BonusOutOfRange {});
     }
     new_arr.retain(|&x| &x != bonus_number);
-    // new_arr.sort();
-    // new_arr.dedup();
-    //
-    // if new_arr.len() as u8 != state.set_of_balls {
-    //     return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
-    // }
+    new_arr.sort();
+    new_arr.dedup();
+
+    if new_arr.len() as u8 != state.set_of_balls {
+        return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+    }
 
     new_number.push(new_arr);
     //}
@@ -838,12 +839,12 @@ mod tests {
     fn default_init(deps: DepsMut) {
         let msg = InstantiateMsg {
             denom: "uusd".to_string(),
-            frequency: 300,
+            frequency: 86400,
             fee_collector: Decimal::from_str("0.05").unwrap(),
             fee_collector_address: "STAKING".to_string(),
             fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
             terrand_address: "TERRAND".to_string(),
-            set_of_balls: 4,
+            set_of_balls: 5,
             range_min: 1,
             range_max: 16,
             bonus_set_of_balls: 1,
@@ -871,6 +872,7 @@ mod tests {
                 Decimal::from_str("5").unwrap(),
             ],
             live_round_max: 5,
+            burn_rate: Decimal::from_str("0.5").unwrap(),
         };
 
         let mut env = mock_env();
@@ -882,12 +884,12 @@ mod tests {
     fn custom_init_prize(deps: DepsMut) {
         let msg = InstantiateMsg {
             denom: "uusd".to_string(),
-            frequency: 300,
+            frequency: 86400,
             fee_collector: Decimal::from_str("0.05").unwrap(),
             fee_collector_address: "STAKING".to_string(),
             fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
             terrand_address: "TERRAND".to_string(),
-            set_of_balls: 4,
+            set_of_balls: 5,
             range_min: 1,
             range_max: 16,
             bonus_set_of_balls: 1,
@@ -914,6 +916,7 @@ mod tests {
                 Decimal::from_str("5").unwrap(),
             ],
             live_round_max: 5,
+            burn_rate: Decimal::from_str("0.5").unwrap()
         };
 
         let mut env = mock_env();
@@ -933,7 +936,7 @@ mod tests {
         default_init(deps.as_mut());
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 1],
+            numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
@@ -946,7 +949,7 @@ mod tests {
             }],
         );
         let mut env = mock_env();
-        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME).plus_seconds(301);
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME).plus_seconds(86401);
 
         // Error time not started yet
         let err = execute(deps.as_mut(), env, sender.clone(), msg).unwrap_err();
@@ -967,7 +970,7 @@ mod tests {
 
         // Error bonus out of range
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 10],
+            numbers: vec![5, 7, 12, 15, 13, 10],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
@@ -975,7 +978,7 @@ mod tests {
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 0],
+            numbers: vec![5, 7, 12, 15, 13, 0],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
@@ -985,7 +988,7 @@ mod tests {
 
         // live round error max life exceeded
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 1],
+            numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 0,
             address: None,
@@ -994,7 +997,7 @@ mod tests {
         assert_eq!(err, ContractError::LiveRoundMaxLifeExceeded {});
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 1],
+            numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 6,
             address: None,
@@ -1013,7 +1016,7 @@ mod tests {
 
         // Success
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 1],
+            numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
@@ -1062,7 +1065,7 @@ mod tests {
         );
 
         let msg = ExecuteMsg::Register {
-            numbers: vec![1, 2, 17, 6, 4],
+            numbers: vec![1, 2, 17, 6, 12, 4],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 4,
             address: None,
@@ -1085,7 +1088,7 @@ mod tests {
             games,
             vec![
                 GameResponse {
-                    number: vec![1, 2, 17, 6],
+                    number: vec![1, 2, 17, 6, 12],
                     bonus: 4,
                     multiplier: Decimal::from_str("1").unwrap(),
                     resolved: false,
@@ -1093,7 +1096,7 @@ mod tests {
                     lottery_id: 0
                 },
                 GameResponse {
-                    number: vec![5, 7, 12, 15],
+                    number: vec![5, 7, 12, 15, 13],
                     bonus: 1,
                     multiplier: Decimal::from_str("5").unwrap(),
                     resolved: false,
@@ -1106,7 +1109,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![1, 2, 17, 6],
+                number: vec![1, 2, 17, 6, 12],
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
@@ -1118,7 +1121,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![1, 2, 17, 6],
+                number: vec![1, 2, 17, 6, 12],
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
@@ -1130,7 +1133,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![1, 2, 17, 6],
+                number: vec![1, 2, 17, 6, 12],
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
@@ -1171,7 +1174,7 @@ mod tests {
             }],
         );
         let msg = ExecuteMsg::Register {
-            numbers: vec![5, 7, 12, 15, 1],
+            numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
@@ -1194,7 +1197,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![5, 7, 12, 15],
+                number: vec![5, 7, 12, 15, 13],
                 bonus: 1,
                 multiplier: Decimal::from_str("5").unwrap(),
                 resolved: false,
