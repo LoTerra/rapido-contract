@@ -1,6 +1,7 @@
 use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -20,23 +21,32 @@ pub struct InstantiateMsg {
     pub ticket_price: Vec<Uint128>,
     pub multiplier: Vec<Decimal>,
     pub live_round_max: u16,
-    pub burn_rate: Decimal
+    pub burn_rate: Decimal,
+    pub cw20_contract_address: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Register {
-        numbers: Vec<u8>,
-        multiplier: Uint128,
-        live_round: u16,
-        address: Option<String>,
-    },
     Draw {},
     Collect {
         round: u64,
         player: String,
         game_id: Vec<u64>,
+    },
+    /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
+    Receive(Cw20ReceiveMsg),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReceiveMsg {
+    /// Register ticket
+    Register {
+        numbers: Vec<u8>,
+        multiplier: Uint128,
+        live_round: u16,
+        address: Option<String>,
     },
 }
 

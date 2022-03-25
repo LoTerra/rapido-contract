@@ -52,6 +52,7 @@ cosmwasm-bignumber = "~2.2.0"
 terrand = {version = "3.2.2", features = ["library"]}
 hex = "0.4.2"
 sha2 = "0.8.2"
+cw20 = "0.9.1"
 
 [dev-dependencies]
 cosmwasm-schema = { version = "0.16.0" }

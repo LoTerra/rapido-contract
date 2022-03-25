@@ -1,9 +1,6 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    to_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdResult, SubMsg, Uint128, WasmQuery,
-};
+use cosmwasm_std::{to_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, SubMsg, Uint128, WasmQuery, from_binary};
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::convert::TryInto;
@@ -13,15 +10,14 @@ use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
-use crate::msg::{
-    ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
-    LotteryStatsResponse, QueryMsg, StateResponse,
-};
+use crate::msg::{ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse, LotteryStatsResponse, QueryMsg, ReceiveMsg, StateResponse};
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
     LOTTERY_STATE, LOTTERY_STATS, STATE,
 };
 use crate::taxation::deduct_tax;
+use cw20::{Cw20ReceiveMsg};
+
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -44,7 +40,8 @@ pub fn instantiate(
         fee_collector_terrand: msg.fee_collector_terrand,
         terrand_address: deps.api.addr_canonicalize(&msg.terrand_address)?,
         live_round_max: msg.live_round_max,
-        burn_rate: msg.burn_rate
+        burn_rate: msg.burn_rate,
+        cw20_contract_address: deps.api.addr_canonicalize(&msg.cw20_contract_address)?
     };
 
     let state = State {
@@ -105,18 +102,27 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Register {
-            numbers,
-            multiplier,
-            live_round,
-            address,
-        } => try_register(deps, env, info, numbers, multiplier, live_round, address),
         ExecuteMsg::Draw {} => try_draw(deps, env, info),
         ExecuteMsg::Collect {
             round,
             player,
             game_id,
         } => try_collect(deps, env, info, round, player, game_id),
+        ExecuteMsg::Receive(msg) => try_receive(deps, env, info, msg),
+    }
+}
+
+pub fn try_receive(deps: DepsMut, env: Env, info: MessageInfo, wrapper: Cw20ReceiveMsg) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+
+    // only approved cw20 contract can send receive msg
+    if info.sender != deps.api.addr_humanize(&config.cw20_contract_address)? {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
+    match msg {
+        ReceiveMsg::Register {numbers, multiplier, live_round, address} => try_register(deps, env, info, wrapper.sender, wrapper.amount, numbers, multiplier, live_round, address),
     }
 }
 
@@ -124,6 +130,8 @@ pub fn try_register(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
+    sender: String,
+    amount: Uint128,
     numbers: Vec<u8>,
     multiplier: Uint128,
     live_round: u16,
@@ -137,23 +145,12 @@ pub fn try_register(
         return Err(ContractError::RegisterClosed {});
     }
 
-    let sent = match info.funds.len() {
-        0 => Err(ContractError::EmptyFunds {}),
-        1 => {
-            if info.funds[0].denom != config.denom {
-                return Err(ContractError::WrongDenom {});
-            }
-            Ok(info.funds[0].amount)
-        }
-        _ => Err(ContractError::MultipleDenoms {}),
-    }?;
-
     if live_round == 0 || live_round > config.live_round_max {
         return Err(ContractError::LiveRoundMaxLifeExceeded {});
     }
 
     let address_raw = match address {
-        None => deps.api.addr_canonicalize(&info.sender.as_str())?,
+        None => deps.api.addr_canonicalize(&sender)?,
         Some(address) => deps.api.addr_canonicalize(&address)?,
     };
 
@@ -186,8 +183,8 @@ pub fn try_register(
     let expected_amount = state.ticket_price[0]
         .mul(multiplier_decimal)
         .mul(Decimal::from_str(&live_round.to_string()).unwrap());
-    if sent != expected_amount {
-        return Err(ContractError::AmountSentError(sent, expected_amount));
+    if amount != expected_amount {
+        return Err(ContractError::AmountSentError(amount, expected_amount));
     };
 
     let mut new_number = vec![];
@@ -830,6 +827,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 
 #[cfg(test)]
 mod tests {
+    use std::result;
     use super::*;
     use crate::mock_querier::custom_mock_dependencies;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
@@ -873,6 +871,7 @@ mod tests {
             ],
             live_round_max: 5,
             burn_rate: Decimal::from_str("0.5").unwrap(),
+            cw20_contract_address: "LOTA".to_string()
         };
 
         let mut env = mock_env();
@@ -916,7 +915,8 @@ mod tests {
                 Decimal::from_str("5").unwrap(),
             ],
             live_round_max: 5,
-            burn_rate: Decimal::from_str("0.5").unwrap()
+            burn_rate: Decimal::from_str("0.5").unwrap(),
+            cw20_contract_address: "LOTA".to_string()
         };
 
         let mut env = mock_env();
@@ -935,18 +935,22 @@ mod tests {
         let mut deps = mock_dependencies(&[]);
         default_init(deps.as_mut());
 
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
+
         let sender = mock_info(
-            "alice",
-            &[Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(5_000_000u128),
-            }],
+            "LOTA",
+            &[],
         );
         let mut env = mock_env();
         env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME).plus_seconds(86401);
@@ -969,39 +973,63 @@ mod tests {
         // assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Error bonus out of range
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 10],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 0],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::BonusOutOfRange {});
 
         // live round error max life exceeded
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 0,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::LiveRoundMaxLifeExceeded {});
 
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 6,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(err, ContractError::LiveRoundMaxLifeExceeded {});
 
@@ -1015,12 +1043,18 @@ mod tests {
         // assert_eq!(err, ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
 
         // Success
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
         assert_eq!(
             res.attributes,
@@ -1035,19 +1069,26 @@ mod tests {
         );
         // Error sent less than required
         let sender = mock_info(
-            "alice",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(1_000_000u128),
             }],
         );
 
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![1, 2, 17, 6, 4],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 4,
             address: None,
         };
+
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(
             err,
@@ -1057,19 +1098,25 @@ mod tests {
             )
         );
         let sender = mock_info(
-            "alice",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(4_000_000u128),
             }],
         );
 
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![1, 2, 17, 6, 12, 4],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 4,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
         assert_eq!(
             res.attributes,
@@ -1144,18 +1191,25 @@ mod tests {
 
         // Error sent
         let sender = mock_info(
-            "bob",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(10_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
         };
+
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "bob".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
         assert_eq!(
             err,
@@ -1167,18 +1221,24 @@ mod tests {
 
         // Success
         let sender = mock_info(
-            "bob",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(5_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 13, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "bob".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap();
 
         assert_eq!(
@@ -1294,14 +1354,20 @@ mod tests {
             ]
         );
 
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 2,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let sender = mock_info(
-            "alice",
+            "bob",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(10_000_000u128),
@@ -1310,7 +1376,7 @@ mod tests {
 
         let res = execute(deps.as_mut(), env.clone(), sender, msg.clone()).unwrap();
         let sender = mock_info(
-            "bob",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(10_000_000u128),
@@ -1353,106 +1419,148 @@ mod tests {
                 amount: Uint128::from(10_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 2,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // Alice winning number found
         let sender = mock_info(
-            "alice",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(2_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![4, 15, 6, 4, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // Bob 3 numbers found and 1 bonus
         let sender = mock_info(
-            "bob",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(2_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![4, 15, 6, 5, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "bob".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // Charlie 2 numbers found and 0 bonus
         let sender = mock_info(
-            "charlie",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(2_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![4, 15, 6, 2, 2],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "charlie".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // Mario 0 numbers found and 1 bonus refund
         let sender = mock_info(
-            "mario",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(1_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![1, 1, 1, 1, 7],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "mario".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
         // Mario 0 numbers found and 1 bonus refund
         let sender = mock_info(
-            "mario",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(1_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![4, 1, 1, 1, 1],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "mario".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
         // Mario 0 numbers found
         let sender = mock_info(
-            "mario",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(1_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![1, 1, 1, 1, 1],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "mario".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         let mut env = mock_env();
@@ -1678,27 +1786,39 @@ mod tests {
 
         // bonus not counting
         let sender = mock_info(
-            "alice",
+            "LOTA",
             &[Coin {
                 denom: "uusd".to_string(),
                 amount: Uint128::from(2_000_000u128),
             }],
         );
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![1, 1, 1, 1, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // 1 number
-        let msg = ExecuteMsg::Register {
+        let msg = ReceiveMsg::Register {
             numbers: vec![4, 1, 1, 1, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(5_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         let mut env = mock_env();

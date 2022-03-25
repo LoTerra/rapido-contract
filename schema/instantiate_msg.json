@@ -6,6 +6,8 @@
     "bonus_range_max",
     "bonus_range_min",
     "bonus_set_of_balls",
+    "burn_rate",
+    "cw20_contract_address",
     "denom",
     "fee_collector",
     "fee_collector_address",
@@ -35,6 +37,12 @@
       "type": "integer",
       "format": "uint8",
       "minimum": 0.0
+    },
+    "burn_rate": {
+      "$ref": "#/definitions/Decimal"
+    },
+    "cw20_contract_address": {
+      "type": "string"
     },
     "denom": {
       "type": "string"
