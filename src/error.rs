@@ -30,6 +30,9 @@ pub enum ContractError {
     #[error("Bonus number is out of range")]
     BonusOutOfRange {},
 
+    #[error("Number is out of range")]
+    OutOfRange {},
+
     #[error("Lottery still in progress")]
     LotteryInProgress {},
 

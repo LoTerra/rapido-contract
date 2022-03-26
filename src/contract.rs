@@ -190,21 +190,27 @@ pub fn try_register(
     let mut new_number = vec![];
     // Check if duplicate numbers
     //for mut number in numbers.clone() {
-    let mut new_arr = numbers.clone();
+    let mut new_arr_number = numbers.clone();
     let bonus_number = numbers.last().unwrap();
     // Handle the bonus number is in the range
     if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
         return Err(ContractError::BonusOutOfRange {});
     }
-    new_arr.retain(|&x| &x != bonus_number);
-    new_arr.sort();
-    new_arr.dedup();
+    new_arr_number.retain(|&x| &x != bonus_number);
+    new_arr_number.sort();
+    new_arr_number.dedup();
 
-    if new_arr.len() as u8 != state.set_of_balls {
+    if new_arr_number.len() as u8 != state.set_of_balls {
         return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
     }
 
-    new_number.push(new_arr);
+    for number in  new_arr_number.clone() {
+        if number > state.range.max || number < state.range.min {
+            return Err(ContractError::OutOfRange {});
+        }
+    }
+
+    new_number.push(new_arr_number);
     //}
     let mut rounds_info = vec![];
     for round in state.round..state.round.checked_add(u64::from(live_round)).unwrap() {
@@ -1413,43 +1419,38 @@ mod tests {
         default_init(deps.as_mut());
 
         let sender = mock_info(
-            "alice",
-            &[Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(10_000_000u128),
-            }],
+            "LOTA",
+            &[],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![5, 7, 12, 15, 1],
+            numbers: vec![5, 7, 12, 15, 16, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 2,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "alice".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(10_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
+
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // Alice winning number found
         let sender = mock_info(
             "LOTA",
-            &[Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(2_000_000u128),
-            }],
+            &[],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![4, 15, 6, 4, 7],
+            numbers: vec![4, 15, 6, 2, 16, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "alice".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(2_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
@@ -1464,14 +1465,14 @@ mod tests {
             }],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![4, 15, 6, 5, 7],
+            numbers: vec![4, 15, 6, 5, 1, 7],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "bob".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(2_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
@@ -1486,14 +1487,14 @@ mod tests {
             }],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![4, 15, 6, 2, 2],
+            numbers: vec![4, 15, 6, 2, 1, 2],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "charlie".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(2_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
@@ -1508,7 +1509,7 @@ mod tests {
             }],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![1, 1, 1, 1, 7],
+            numbers: vec![1, 2, 3, 4, 5, 7],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
