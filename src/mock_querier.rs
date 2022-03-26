@@ -28,34 +28,22 @@ pub fn custom_mock_dependencies(
     }
 }
 #[derive(Clone, Default, Serialize)]
-pub struct TokenOwnerResponse {
-    pub owner: String,
+pub struct HolderResponse {
+    pub address: String,
+    pub balance: Uint128,
+    pub index: Decimal,
+    pub pending_rewards: Decimal,
 }
 
-impl TokenOwnerResponse {
-    pub fn new(owner: String) -> Self {
-        TokenOwnerResponse { owner }
-    }
-}
-#[derive(Clone, Default, Serialize)]
-pub struct TokensResponse {
-    pub tokens_asc: Vec<String>,
-    pub tokens_desc: Vec<String>,
-}
-
-impl TokensResponse {
-    pub fn new(tokens_asc: Vec<String>, tokens_desc: Vec<String>) -> Self {
-        TokensResponse {
-            tokens_asc,
-            tokens_desc,
-        }
+impl HolderResponse {
+    pub fn new(address: String, balance: Uint128, index: Decimal, pending_rewards: Decimal) -> Self {
+        HolderResponse { address, balance, index, pending_rewards }
     }
 }
 
 pub struct WasmMockQuerier {
     base: MockQuerier<TerraQueryWrapper>,
-    token_owner: TokenOwnerResponse,
-    tokens: TokensResponse,
+    holder: HolderResponse,
 }
 
 impl Querier for WasmMockQuerier {
@@ -87,6 +75,14 @@ impl WasmMockQuerier {
                         worker: "worker".to_string(),
                     };
                     return SystemResult::Ok(ContractResult::Ok(to_binary(&msg_terrand).unwrap()));
+                }else if contract_addr == &"STAKING".to_string() {
+                    let msg_holder = HolderResponse {
+                        address: "0".to_string(),
+                        balance: self.holder.balance,
+                        index: self.holder.index,
+                        pending_rewards: self.holder.pending_rewards
+                    };
+                    return SystemResult::Ok(ContractResult::Ok(to_binary(&msg_holder).unwrap()));
                 }
                 panic!("DO NOT ENTER HERE")
             }
@@ -113,16 +109,10 @@ impl WasmMockQuerier {
     pub fn new(base: MockQuerier<TerraQueryWrapper>) -> Self {
         WasmMockQuerier {
             base,
-            token_owner: TokenOwnerResponse::default(),
-            tokens: TokensResponse::default(),
+            holder: HolderResponse::default()
         }
     }
-    // configure the mint whitelist mock querier
-    pub fn set_token_owner(&mut self, address: String) {
-        self.token_owner = TokenOwnerResponse::new(address);
-    }
-    // configure the mint whitelist mock querier
-    pub fn set_tokens(&mut self, tokens_asc: Vec<String>, tokens_desc: Vec<String>) {
-        self.tokens = TokensResponse::new(tokens_asc, tokens_desc);
+    pub fn set_holder(&mut self, address: String, balance: Uint128, index: Decimal, pending_rewards: Decimal) {
+        self.holder = HolderResponse::new(address, balance, index, pending_rewards);
     }
 }

@@ -20,6 +20,8 @@ pub struct InstantiateMsg {
     pub ticket_price: Vec<Uint128>,
     pub multiplier: Vec<Decimal>,
     pub live_round_max: u16,
+    pub fee_collector_rebate_one: Decimal,
+    pub fee_collector_rebate_two: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -72,6 +74,22 @@ pub enum QueryMsg {
     // GameStats {round: u64, player: String}
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LoTerraStakingQueryMsg {
+    Holder {
+        address: String,
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct HolderResponse {
+    pub address: String,
+    pub balance: Uint128,
+    pub index: Decimal,
+    pub pending_rewards: Decimal,
+}
+
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
@@ -81,6 +99,8 @@ pub struct ConfigResponse {
     pub fee_collector_address: String,
     pub fee_collector_terrand: Decimal,
     pub fee_collector_terrand_address: String,
+    pub fee_collector_rebate_one: Decimal,
+    pub fee_collector_rebate_two: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -13,10 +13,7 @@ use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
-use crate::msg::{
-    ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
-    LotteryStatsResponse, QueryMsg, StateResponse,
-};
+use crate::msg::{ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, HolderResponse, InstantiateMsg, LoTerraStakingQueryMsg, LotteryResponse, LotteryStatsResponse, QueryMsg, StateResponse};
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
     LOTTERY_STATE, LOTTERY_STATS, STATE,
@@ -44,6 +41,8 @@ pub fn instantiate(
         fee_collector_terrand: msg.fee_collector_terrand,
         terrand_address: deps.api.addr_canonicalize(&msg.terrand_address)?,
         live_round_max: msg.live_round_max,
+        fee_collector_rebate_one: msg.fee_collector_rebate_one,
+        fee_collector_rebate_two: msg.fee_collector_rebate_two
     };
 
     let state = State {
@@ -560,7 +559,22 @@ pub fn try_collect(
     let mut res = Response::new();
 
     if !total_amount_to_send.is_zero() {
-        let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
+        let query_holder = LoTerraStakingQueryMsg::Holder { address: player.clone() };
+        let staking_human = deps.api.addr_humanize(&config.fee_collector_address)?;
+        let query = WasmQuery::Smart {
+            contract_addr: staking_human.to_string(),
+            msg: to_binary(&query_holder)?,
+        };
+        let holder_info: HolderResponse =
+            deps.querier.query(&query.into())?;
+
+        let fee_collector = match holder_info.balance {
+            balance if balance >= Uint128::from(1_000_000_000u128) => config.fee_collector_rebate_one,
+            balance if balance >= Uint128::from(10_000_000_000u128) => config.fee_collector_rebate_two,
+            _ => config.fee_collector
+        };
+
+        let collector_tax_amount = total_amount_to_send.mul(fee_collector);
         let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
 
         let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
@@ -652,6 +666,8 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
             .to_string(),
         fee_collector_terrand: config.fee_collector_terrand,
         fee_collector_terrand_address: deps.api.addr_humanize(&config.terrand_address)?.to_string(),
+        fee_collector_rebate_one: config.fee_collector_rebate_one,
+        fee_collector_rebate_two: config.fee_collector_rebate_two
     })
 }
 
@@ -808,8 +824,10 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    //let mut config = CONFIG.load(deps.storage)?;
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    let mut config = CONFIG.load(deps.storage)?;
+    config.fee_collector = Decimal::from_str("0.15").unwrap();
+    CONFIG.save(deps.storage, &config)?;
     //config.fee_collector = Decimal::from_str("0.1").unwrap();
     //let mut state = STATE.load(deps.storage)?;
     // state.prize_rank = vec![
@@ -871,6 +889,8 @@ mod tests {
                 Decimal::from_str("5").unwrap(),
             ],
             live_round_max: 5,
+            fee_collector_rebate_one: Decimal::from_str("0.03").unwrap(),
+            fee_collector_rebate_two: Decimal::from_str("0.01").unwrap()
         };
 
         let mut env = mock_env();
@@ -914,6 +934,8 @@ mod tests {
                 Decimal::from_str("5").unwrap(),
             ],
             live_round_max: 5,
+            fee_collector_rebate_one: Decimal::from_str("0.03").unwrap(),
+            fee_collector_rebate_two: Decimal::from_str("0.01").unwrap()
         };
 
         let mut env = mock_env();
