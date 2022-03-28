@@ -573,7 +573,10 @@ pub fn try_collect(
         let holder_info: HolderResponse = deps.querier.query(&query.into())?;
 
         let fee_collector = match holder_info.balance {
-            balance if balance >= Uint128::from(1_000_000_000u128) => {
+            balance
+                if balance >= Uint128::from(1_000_000_000u128)
+                    && balance < Uint128::from(10_000_000_000u128) =>
+            {
                 config.fee_collector_rebate_one
             }
             balance if balance >= Uint128::from(10_000_000_000u128) => {
@@ -832,21 +835,21 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    let config = CONFIG.load(deps.storage)?;
-    let new_config = Config {
-        denom: config.denom,
-        frequency: config.frequency,
-        fee_collector: Decimal::from_str("0.15").unwrap(),
-        fee_collector_address: config.fee_collector_address,
-        fee_collector_terrand: config.fee_collector_terrand,
-        terrand_address: config.terrand_address,
-        live_round_max: config.live_round_max,
-        fee_collector_rebate_one: Decimal::from_str("0.10").unwrap(),
-        fee_collector_rebate_two: Decimal::from_str("0.05").unwrap(),
-    };
-
-    CONFIG.save(deps.storage, &new_config)?;
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    // let config = PAST_CONFIG.load(deps.storage)?;
+    // let new_config = Config {
+    //     denom: config.denom,
+    //     frequency: config.frequency,
+    //     fee_collector: Decimal::from_str("0.15").unwrap(),
+    //     fee_collector_address: config.fee_collector_address,
+    //     fee_collector_terrand: config.fee_collector_terrand,
+    //     terrand_address: config.terrand_address,
+    //     live_round_max: config.live_round_max,
+    //     fee_collector_rebate_one: Decimal::from_str("0.10").unwrap(),
+    //     fee_collector_rebate_two: Decimal::from_str("0.05").unwrap(),
+    // };
+    //
+    // CONFIG.save(deps.storage, &new_config)?;
     //config.fee_collector = Decimal::from_str("0.1").unwrap();
     //let mut state = STATE.load(deps.storage)?;
     // state.prize_rank = vec![
@@ -861,7 +864,13 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response
     //     Uint128::from(10_000_000_000u128),
     // ];
     // STATE.save(deps.storage, &state)?;
-    Ok(Response::default())
+    // let res = Response::new()
+    //     .add_attribute("update", "Fee_conditions")
+    //     .add_attribute("max_fee_collector", "15%")
+    //     .add_attribute("rebate_tier_one_fee_collector", "10%")
+    //     .add_attribute("rebate_tier_two_fee_collector", "5%");
+    let res = Response::default();
+    Ok(res)
 }
 
 #[cfg(test)]
@@ -1713,6 +1722,12 @@ mod tests {
     fn try_collect_on_custom_init() {
         let mut deps = custom_mock_dependencies(&[]);
         custom_init_prize(deps.as_mut());
+        deps.querier.set_holder(
+            "alice".to_string(),
+            Uint128::from(500_000_000u128),
+            Decimal::one(),
+            Decimal::one(),
+        );
 
         // bonus not counting
         let sender = mock_info(

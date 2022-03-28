@@ -16,7 +16,7 @@ pub struct Config {
     pub fee_collector_rebate_one: Decimal,
     pub fee_collector_rebate_two: Decimal,
 }
-pub const CONFIG: Item<Config> = Item::new("config");
+pub const CONFIG: Item<Config> = Item::new("new_config");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct BallsRange {
