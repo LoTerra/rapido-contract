@@ -36,8 +36,18 @@ pub struct HolderResponse {
 }
 
 impl HolderResponse {
-    pub fn new(address: String, balance: Uint128, index: Decimal, pending_rewards: Decimal) -> Self {
-        HolderResponse { address, balance, index, pending_rewards }
+    pub fn new(
+        address: String,
+        balance: Uint128,
+        index: Decimal,
+        pending_rewards: Decimal,
+    ) -> Self {
+        HolderResponse {
+            address,
+            balance,
+            index,
+            pending_rewards,
+        }
     }
 }
 
@@ -75,12 +85,12 @@ impl WasmMockQuerier {
                         worker: "worker".to_string(),
                     };
                     return SystemResult::Ok(ContractResult::Ok(to_binary(&msg_terrand).unwrap()));
-                }else if contract_addr == &"STAKING".to_string() {
+                } else if contract_addr == &"STAKING".to_string() {
                     let msg_holder = HolderResponse {
                         address: "0".to_string(),
                         balance: self.holder.balance,
                         index: self.holder.index,
-                        pending_rewards: self.holder.pending_rewards
+                        pending_rewards: self.holder.pending_rewards,
                     };
                     return SystemResult::Ok(ContractResult::Ok(to_binary(&msg_holder).unwrap()));
                 }
@@ -109,10 +119,16 @@ impl WasmMockQuerier {
     pub fn new(base: MockQuerier<TerraQueryWrapper>) -> Self {
         WasmMockQuerier {
             base,
-            holder: HolderResponse::default()
+            holder: HolderResponse::default(),
         }
     }
-    pub fn set_holder(&mut self, address: String, balance: Uint128, index: Decimal, pending_rewards: Decimal) {
+    pub fn set_holder(
+        &mut self,
+        address: String,
+        balance: Uint128,
+        index: Decimal,
+        pending_rewards: Decimal,
+    ) {
         self.holder = HolderResponse::new(address, balance, index, pending_rewards);
     }
 }

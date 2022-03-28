@@ -6,6 +6,8 @@
     "denom",
     "fee_collector",
     "fee_collector_address",
+    "fee_collector_rebate_one",
+    "fee_collector_rebate_two",
     "fee_collector_terrand",
     "fee_collector_terrand_address",
     "frequency"
@@ -19,6 +21,12 @@
     },
     "fee_collector_address": {
       "type": "string"
+    },
+    "fee_collector_rebate_one": {
+      "$ref": "#/definitions/Decimal"
+    },
+    "fee_collector_rebate_two": {
+      "$ref": "#/definitions/Decimal"
     },
     "fee_collector_terrand": {
       "$ref": "#/definitions/Decimal"

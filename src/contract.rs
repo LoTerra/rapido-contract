@@ -13,7 +13,10 @@ use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
-use crate::msg::{ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, HolderResponse, InstantiateMsg, LoTerraStakingQueryMsg, LotteryResponse, LotteryStatsResponse, QueryMsg, StateResponse};
+use crate::msg::{
+    ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, HolderResponse, InstantiateMsg,
+    LoTerraStakingQueryMsg, LotteryResponse, LotteryStatsResponse, QueryMsg, StateResponse,
+};
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
     LOTTERY_STATE, LOTTERY_STATS, STATE,
@@ -42,7 +45,7 @@ pub fn instantiate(
         terrand_address: deps.api.addr_canonicalize(&msg.terrand_address)?,
         live_round_max: msg.live_round_max,
         fee_collector_rebate_one: msg.fee_collector_rebate_one,
-        fee_collector_rebate_two: msg.fee_collector_rebate_two
+        fee_collector_rebate_two: msg.fee_collector_rebate_two,
     };
 
     let state = State {
@@ -559,19 +562,24 @@ pub fn try_collect(
     let mut res = Response::new();
 
     if !total_amount_to_send.is_zero() {
-        let query_holder = LoTerraStakingQueryMsg::Holder { address: player.clone() };
+        let query_holder = LoTerraStakingQueryMsg::Holder {
+            address: player.clone(),
+        };
         let staking_human = deps.api.addr_humanize(&config.fee_collector_address)?;
         let query = WasmQuery::Smart {
             contract_addr: staking_human.to_string(),
             msg: to_binary(&query_holder)?,
         };
-        let holder_info: HolderResponse =
-            deps.querier.query(&query.into())?;
+        let holder_info: HolderResponse = deps.querier.query(&query.into())?;
 
         let fee_collector = match holder_info.balance {
-            balance if balance >= Uint128::from(1_000_000_000u128) => config.fee_collector_rebate_one,
-            balance if balance >= Uint128::from(10_000_000_000u128) => config.fee_collector_rebate_two,
-            _ => config.fee_collector
+            balance if balance >= Uint128::from(1_000_000_000u128) => {
+                config.fee_collector_rebate_one
+            }
+            balance if balance >= Uint128::from(10_000_000_000u128) => {
+                config.fee_collector_rebate_two
+            }
+            _ => config.fee_collector,
         };
 
         let collector_tax_amount = total_amount_to_send.mul(fee_collector);
@@ -667,7 +675,7 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         fee_collector_terrand: config.fee_collector_terrand,
         fee_collector_terrand_address: deps.api.addr_humanize(&config.terrand_address)?.to_string(),
         fee_collector_rebate_one: config.fee_collector_rebate_one,
-        fee_collector_rebate_two: config.fee_collector_rebate_two
+        fee_collector_rebate_two: config.fee_collector_rebate_two,
     })
 }
 
@@ -825,9 +833,20 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    let mut config = CONFIG.load(deps.storage)?;
-    config.fee_collector = Decimal::from_str("0.15").unwrap();
-    CONFIG.save(deps.storage, &config)?;
+    let config = CONFIG.load(deps.storage)?;
+    let new_config = Config {
+        denom: config.denom,
+        frequency: config.frequency,
+        fee_collector: Decimal::from_str("0.15").unwrap(),
+        fee_collector_address: config.fee_collector_address,
+        fee_collector_terrand: config.fee_collector_terrand,
+        terrand_address: config.terrand_address,
+        live_round_max: config.live_round_max,
+        fee_collector_rebate_one: Decimal::from_str("0.10").unwrap(),
+        fee_collector_rebate_two: Decimal::from_str("0.05").unwrap(),
+    };
+
+    CONFIG.save(deps.storage, &new_config)?;
     //config.fee_collector = Decimal::from_str("0.1").unwrap();
     //let mut state = STATE.load(deps.storage)?;
     // state.prize_rank = vec![
@@ -890,7 +909,7 @@ mod tests {
             ],
             live_round_max: 5,
             fee_collector_rebate_one: Decimal::from_str("0.03").unwrap(),
-            fee_collector_rebate_two: Decimal::from_str("0.01").unwrap()
+            fee_collector_rebate_two: Decimal::from_str("0.01").unwrap(),
         };
 
         let mut env = mock_env();
@@ -935,7 +954,7 @@ mod tests {
             ],
             live_round_max: 5,
             fee_collector_rebate_one: Decimal::from_str("0.03").unwrap(),
-            fee_collector_rebate_two: Decimal::from_str("0.01").unwrap()
+            fee_collector_rebate_two: Decimal::from_str("0.01").unwrap(),
         };
 
         let mut env = mock_env();
