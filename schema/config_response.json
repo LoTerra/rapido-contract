@@ -3,7 +3,6 @@
   "title": "ConfigResponse",
   "type": "object",
   "required": [
-    "denom",
     "fee_collector",
     "fee_collector_address",
     "fee_collector_terrand",
@@ -11,9 +10,6 @@
     "frequency"
   ],
   "properties": {
-    "denom": {
-      "type": "string"
-    },
     "fee_collector": {
       "$ref": "#/definitions/Decimal"
     },

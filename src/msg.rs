@@ -1,7 +1,7 @@
 use cosmwasm_std::{Decimal, Uint128};
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -86,7 +86,6 @@ pub enum QueryMsg {
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
-    pub denom: String,
     pub frequency: u64,
     pub fee_collector: Decimal,
     pub fee_collector_address: String,

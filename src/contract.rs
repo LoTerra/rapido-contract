@@ -1,6 +1,9 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, SubMsg, Uint128, WasmQuery, from_binary};
+use cosmwasm_std::{
+    from_binary, to_binary, Addr, Attribute, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps,
+    DepsMut, Env, MessageInfo, Order, Response, StdResult, SubMsg, Uint128, WasmMsg, WasmQuery,
+};
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 use std::convert::TryInto;
@@ -10,13 +13,16 @@ use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
-use crate::msg::{ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse, LotteryStatsResponse, QueryMsg, ReceiveMsg, StateResponse};
+use crate::msg::{
+    ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
+    LotteryStatsResponse, QueryMsg, ReceiveMsg, StateResponse,
+};
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
     LOTTERY_STATE, LOTTERY_STATS, STATE,
 };
 use crate::taxation::deduct_tax;
-use cw20::{Cw20ReceiveMsg};
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:loterra-v2.0";
@@ -33,7 +39,6 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     let config = Config {
-        denom: msg.denom,
         frequency: msg.frequency,
         fee_collector: msg.fee_collector,
         fee_collector_address: deps.api.addr_canonicalize(&msg.fee_collector_address)?,
@@ -41,7 +46,7 @@ pub fn instantiate(
         terrand_address: deps.api.addr_canonicalize(&msg.terrand_address)?,
         live_round_max: msg.live_round_max,
         burn_rate: msg.burn_rate,
-        cw20_contract_address: deps.api.addr_canonicalize(&msg.cw20_contract_address)?
+        cw20_contract_address: deps.api.addr_canonicalize(&msg.cw20_contract_address)?,
     };
 
     let state = State {
@@ -112,7 +117,12 @@ pub fn execute(
     }
 }
 
-pub fn try_receive(deps: DepsMut, env: Env, info: MessageInfo, wrapper: Cw20ReceiveMsg) -> Result<Response, ContractError> {
+pub fn try_receive(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    wrapper: Cw20ReceiveMsg,
+) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
     // only approved cw20 contract can send receive msg
@@ -122,7 +132,22 @@ pub fn try_receive(deps: DepsMut, env: Env, info: MessageInfo, wrapper: Cw20Rece
 
     let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
     match msg {
-        ReceiveMsg::Register {numbers, multiplier, live_round, address} => try_register(deps, env, info, wrapper.sender, wrapper.amount, numbers, multiplier, live_round, address),
+        ReceiveMsg::Register {
+            numbers,
+            multiplier,
+            live_round,
+            address,
+        } => try_register(
+            deps,
+            env,
+            info,
+            wrapper.sender,
+            wrapper.amount,
+            numbers,
+            multiplier,
+            live_round,
+            address,
+        ),
     }
 }
 
@@ -196,7 +221,9 @@ pub fn try_register(
     if bonus_number > &state.bonus_range.max || bonus_number < &state.bonus_range.min {
         return Err(ContractError::BonusOutOfRange {});
     }
-    new_arr_number.retain(|&x| &x != bonus_number);
+
+    new_arr_number.pop();
+    println!("{:?}", new_arr_number);
     new_arr_number.sort();
     new_arr_number.dedup();
 
@@ -204,7 +231,7 @@ pub fn try_register(
         return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
     }
 
-    for number in  new_arr_number.clone() {
+    for number in new_arr_number.clone() {
         if number > state.range.max || number < state.range.min {
             return Err(ContractError::OutOfRange {});
         }
@@ -383,7 +410,7 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
         return Err(ContractError::LotteryInProgress {});
     }
 
-    let mut msgs = vec![];
+    //let mut msgs = vec![];
     if lottery_stats.is_some() {
         // Query terrand for the randomness
         let msg = terrand::msg::QueryMsg::GetRandomness {
@@ -400,7 +427,7 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
         // let x = random_number(randomness_hash.clone(), state.set_of_balls, state.range.max);
 
         let numbers: Vec<_> = randomness_hash.chars().collect();
-        let winning_number = winning_number(numbers.clone())?;
+        let winning_number = winning_number(numbers.clone(), state.set_of_balls)?;
         let bonus_number = bonus_number(numbers.last().unwrap())?;
 
         let worker_raw = deps.api.addr_canonicalize(&terrand_randomness.worker)?;
@@ -417,18 +444,18 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
             },
         )?;
 
-        let randomness_fee = CosmosMsg::Bank(BankMsg::Send {
-            to_address: terrand_randomness.worker,
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom.clone(),
-                    amount: Uint128::from(1_000_000u128),
-                },
-            )?],
-        });
-
-        msgs.push(randomness_fee)
+        // let randomness_fee = CosmosMsg::Bank(BankMsg::Send {
+        //     to_address: terrand_randomness.worker,
+        //     amount: vec![deduct_tax(
+        //         &deps.querier,
+        //         Coin {
+        //             denom: config.denom.clone(),
+        //             amount: Uint128::from(1_000_000u128),
+        //         },
+        //     )?],
+        // });
+        //
+        // msgs.push(randomness_fee)
     }
 
     // Update state & save
@@ -461,7 +488,6 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
     )?;
 
     Ok(Response::new()
-        .add_messages(msgs)
         .add_attribute("method", "try_draw")
         .add_attribute("round", state.round.checked_sub(1).unwrap().to_string()))
 }
@@ -564,55 +590,73 @@ pub fn try_collect(
     let mut res = Response::new();
 
     if !total_amount_to_send.is_zero() {
+        let human_cw20_contract = deps
+            .api
+            .addr_humanize(&config.cw20_contract_address)?
+            .to_string();
+        let cw20_burn_amount = total_amount_to_send.mul(config.burn_rate);
         let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
         let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
 
-        let msg_prize_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: player,
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom.clone(),
-                    amount: total_amount_to_send
-                        .checked_sub(collector_tax_amount)
-                        .unwrap()
-                        .checked_sub(terrand_tax_amount)
-                        .unwrap(),
-                },
-            )?],
+        let execute_prize_payout = Cw20ExecuteMsg::Transfer {
+            recipient: player,
+            amount: total_amount_to_send
+                .checked_sub(collector_tax_amount)
+                .unwrap()
+                .checked_sub(terrand_tax_amount)
+                .unwrap()
+                .checked_sub(cw20_burn_amount)
+                .unwrap(),
+        };
+        let msg_prize_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: human_cw20_contract.clone(),
+            msg: to_binary(&execute_prize_payout)?,
+            funds: vec![],
         });
+
         res.messages.push(SubMsg::new(msg_prize_payout));
 
-        let msg_fee_collector_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: deps
+        let execute_fee_payout = Cw20ExecuteMsg::Transfer {
+            recipient: deps
                 .api
                 .addr_humanize(&config.fee_collector_address)?
                 .to_string(),
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom.clone(),
-                    amount: collector_tax_amount,
-                },
-            )?],
+            amount: collector_tax_amount,
+        };
+        let msg_fee_collector_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: human_cw20_contract.clone(),
+            msg: to_binary(&execute_fee_payout)?,
+            funds: vec![],
         });
+
         res.messages.push(SubMsg::new(msg_fee_collector_payout));
 
         // prepare message to pay tax to terrand worker
-        let msg_fee_terrand_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: deps
+        let execute_worker_payout = Cw20ExecuteMsg::Transfer {
+            recipient: deps
                 .api
                 .addr_humanize(&lottery.terrand_worker.unwrap())?
                 .to_string(),
-            amount: vec![deduct_tax(
-                &deps.querier,
-                Coin {
-                    denom: config.denom,
-                    amount: terrand_tax_amount,
-                },
-            )?],
+            amount: terrand_tax_amount,
+        };
+        let msg_fee_terrand_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: human_cw20_contract.clone(),
+            msg: to_binary(&execute_worker_payout)?,
+            funds: vec![],
         });
+
         res.messages.push(SubMsg::new(msg_fee_terrand_payout));
+
+        // Burn cw20 message
+        let execute_burn_cw20 = Cw20ExecuteMsg::Burn {
+            amount: cw20_burn_amount,
+        };
+        let msg_cw20_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: human_cw20_contract,
+            msg: to_binary(&execute_burn_cw20)?,
+            funds: vec![],
+        });
+        res.messages.push(SubMsg::new(msg_cw20_burn));
     }
 
     res.attributes.push(Attribute::new("method", "try_collect"));
@@ -647,7 +691,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
     Ok(ConfigResponse {
-        denom: config.denom,
         frequency: config.frequency,
         fee_collector: config.fee_collector,
         fee_collector_address: deps
@@ -833,17 +876,17 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 
 #[cfg(test)]
 mod tests {
-    use std::result;
     use super::*;
     use crate::mock_querier::custom_mock_dependencies;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
     use cosmwasm_std::{coins, from_binary, Attribute, Coin, Decimal, Timestamp, Uint128};
+    use std::result;
     use std::str::FromStr;
 
     fn default_init(deps: DepsMut) {
         let msg = InstantiateMsg {
             denom: "uusd".to_string(),
-            frequency: 86400,
+            frequency: 300,
             fee_collector: Decimal::from_str("0.05").unwrap(),
             fee_collector_address: "STAKING".to_string(),
             fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
@@ -877,7 +920,7 @@ mod tests {
             ],
             live_round_max: 5,
             burn_rate: Decimal::from_str("0.5").unwrap(),
-            cw20_contract_address: "LOTA".to_string()
+            cw20_contract_address: "LOTA".to_string(),
         };
 
         let mut env = mock_env();
@@ -922,7 +965,7 @@ mod tests {
             ],
             live_round_max: 5,
             burn_rate: Decimal::from_str("0.5").unwrap(),
-            cw20_contract_address: "LOTA".to_string()
+            cw20_contract_address: "LOTA".to_string(),
         };
 
         let mut env = mock_env();
@@ -954,10 +997,7 @@ mod tests {
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
 
-        let sender = mock_info(
-            "LOTA",
-            &[],
-        );
+        let sender = mock_info("LOTA", &[]);
         let mut env = mock_env();
         env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME).plus_seconds(86401);
 
@@ -1418,10 +1458,7 @@ mod tests {
         let mut deps = custom_mock_dependencies(&[]);
         default_init(deps.as_mut());
 
-        let sender = mock_info(
-            "LOTA",
-            &[],
-        );
+        let sender = mock_info("LOTA", &[]);
         let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 16, 1],
             multiplier: Uint128::from(5_000_000u128),
@@ -1438,10 +1475,7 @@ mod tests {
         let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
 
         // Alice winning number found
-        let sender = mock_info(
-            "LOTA",
-            &[],
-        );
+        let sender = mock_info("LOTA", &[]);
         let msg = ReceiveMsg::Register {
             numbers: vec![4, 15, 6, 2, 16, 7],
             multiplier: Uint128::from(2_000_000u128),
@@ -1511,7 +1545,7 @@ mod tests {
         let msg = ReceiveMsg::Register {
             numbers: vec![1, 2, 3, 4, 5, 7],
             multiplier: Uint128::from(1_000_000u128),
-            live_round: 1,
+            live_round: 5,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
@@ -1530,14 +1564,14 @@ mod tests {
             }],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![4, 1, 1, 1, 1],
+            numbers: vec![4, 2, 5, 1, 6, 1],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "mario".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(1_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
@@ -1551,14 +1585,14 @@ mod tests {
             }],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![1, 1, 1, 1, 1],
+            numbers: vec![1, 4, 5, 6, 8, 1],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 1,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "mario".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(1_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);

@@ -26,7 +26,7 @@ pub fn bonus_number(number: &char) -> Result<u8, ContractError> {
     Ok(bonus_number)
 }
 
-pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
+pub fn winning_number(number: Vec<char>, set_of_balls: u8) -> Result<Vec<u8>, ContractError> {
     let mut winning_number: Vec<u8> = vec![];
     for n in number {
         let number = match n {
@@ -51,7 +51,7 @@ pub fn winning_number(number: Vec<char>) -> Result<Vec<u8>, ContractError> {
 
         if
         /* !winning_number.contains(&number) && */
-        winning_number.len() != 4 {
+        winning_number.len() != set_of_balls as usize {
             winning_number.push(number);
         }
     }
@@ -124,6 +124,7 @@ pub fn save_game(
 
 pub fn count_match(game: &[u8], lottery: &[u8], set_of_balls: u8) -> u8 {
     let mut count = 0;
+
     for i in 0..set_of_balls as usize {
         if game[i] == lottery[i] {
             count += 1
