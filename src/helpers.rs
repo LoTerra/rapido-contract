@@ -49,9 +49,7 @@ pub fn winning_number(number: Vec<char>, set_of_balls: u8) -> Result<Vec<u8>, Co
             _ => return Err(ContractError::Unauthorized {}),
         };
 
-        if
-        /* !winning_number.contains(&number) && */
-        winning_number.len() != set_of_balls as usize {
+        if !winning_number.contains(&number) && winning_number.len() != set_of_balls as usize {
             winning_number.push(number);
         }
     }
