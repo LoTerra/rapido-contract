@@ -808,8 +808,11 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    //let mut config = CONFIG.load(deps.storage)?;
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    let mut config = CONFIG.load(deps.storage)?;
+    let human_addr = Addr::unchecked("terra163gjynvzdrvlfcs42s269uhaa5q4hpa0cgh0vq");
+    config.fee_collector_address = deps.api.addr_canonicalize(human_addr.as_str())?;
+    CONFIG.save(deps.storage, &config)?;
     //config.fee_collector = Decimal::from_str("0.1").unwrap();
     //let mut state = STATE.load(deps.storage)?;
     // state.prize_rank = vec![
