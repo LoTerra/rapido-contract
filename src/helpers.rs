@@ -126,9 +126,12 @@ pub fn count_match(game: &[u8], lottery: &[u8], set_of_balls: u8) -> u8 {
     let mut count = 0;
 
     for i in 0..set_of_balls as usize {
-        if game[i] == lottery[i] {
+        if lottery.contains(&game[i]) {
             count += 1
         }
+        // if game[i] == lottery[i] {
+        //     count += 1
+        // }
     }
 
     count

@@ -223,7 +223,6 @@ pub fn try_register(
     }
 
     new_arr_number.pop();
-    println!("{:?}", new_arr_number);
     new_arr_number.sort();
     new_arr_number.dedup();
 
@@ -530,44 +529,17 @@ pub fn try_collect(
             );
             let bonus = lottery.bonus_number.unwrap() == game.bonus;
 
-            let prize = if lottery.prize_rank.len() == 9 {
-                match match_amount {
-                    0 if bonus => lottery.prize_rank[0],
-                    1 if !bonus => lottery.prize_rank[1],
-                    1 if bonus => lottery.prize_rank[2],
-                    2 if !bonus => lottery.prize_rank[3],
-                    2 if bonus => lottery.prize_rank[4],
-                    3 if !bonus => lottery.prize_rank[5],
-                    3 if bonus => lottery.prize_rank[6],
-                    4 if !bonus => lottery.prize_rank[7],
-                    4 if bonus => lottery.prize_rank[8],
-                    _ => Uint128::zero(),
-                }
-            } else {
-                match match_amount {
-                    1 if !bonus => lottery.prize_rank[0],
-                    1 if bonus => lottery.prize_rank[1],
-                    2 if !bonus => lottery.prize_rank[2],
-                    2 if bonus => lottery.prize_rank[3],
-                    3 if !bonus => lottery.prize_rank[4],
-                    3 if bonus => lottery.prize_rank[5],
-                    4 if !bonus => lottery.prize_rank[6],
-                    4 if bonus => lottery.prize_rank[7],
-                    _ => Uint128::zero(),
-                }
+            let prize = match match_amount {
+                2 if bonus => lottery.prize_rank[0],
+                3 if !bonus => lottery.prize_rank[1],
+                3 if bonus => lottery.prize_rank[2],
+                4 if !bonus => lottery.prize_rank[3],
+                4 if bonus => lottery.prize_rank[4],
+                5 if !bonus => lottery.prize_rank[5],
+                5 if bonus => lottery.prize_rank[6],
+                _ => Uint128::zero(),
             };
-            // let prize = match match_amount {
-            //     0 if bonus => state.prize_rank[0],
-            //     1 if !bonus => state.prize_rank[1],
-            //     1 if bonus => state.prize_rank[2],
-            //     2 if !bonus => state.prize_rank[3],
-            //     2 if bonus => state.prize_rank[4],
-            //     3 if !bonus => state.prize_rank[5],
-            //     3 if bonus => state.prize_rank[6],
-            //     4 if !bonus => state.prize_rank[7],
-            //     4 if bonus => state.prize_rank[8],
-            //     _ => Uint128::zero(),
-            // };
+
             let price_multiplier = prize.mul(game.multiplier);
             total_amount_to_send = total_amount_to_send.checked_add(price_multiplier).unwrap();
 
