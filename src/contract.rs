@@ -49,6 +49,15 @@ pub fn instantiate(
         cw20_contract_address: deps.api.addr_canonicalize(&msg.cw20_contract_address)?,
     };
 
+    // Handle set of ball is in the allowed range
+    if msg.set_of_balls > 5 || msg.set_of_balls < 1 {
+        return Err(ContractError::OutOfRange {});
+    }
+    // Handle bonus set of ball is in the allowed range
+    if msg.bonus_set_of_balls > 1 || msg.bonus_set_of_balls < 1 {
+        return Err(ContractError::BonusOutOfRange {});
+    }
+
     let state = State {
         round: 0,
         set_of_balls: msg.set_of_balls,
@@ -925,6 +934,51 @@ mod tests {
             fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
             terrand_address: "TERRAND".to_string(),
             set_of_balls: 4,
+            range_min: 1,
+            range_max: 16,
+            bonus_set_of_balls: 1,
+            bonus_range_min: 1,
+            bonus_range_max: 8,
+            prize_rank: vec![
+                Uint128::from(1_000_000u128),
+                Uint128::from(5_000_000u128),
+                Uint128::from(10_000_000u128),
+                Uint128::from(30_000_000u128),
+                Uint128::from(50_000_000u128),
+                Uint128::from(150_000_000u128),
+                Uint128::from(1_000_000_000u128),
+                Uint128::from(10_000_000_000u128),
+            ],
+            ticket_price: vec![
+                Uint128::from(1_000_000u128),
+                Uint128::from(2_000_000u128),
+                Uint128::from(5_000_000u128),
+            ],
+            multiplier: vec![
+                Decimal::from_str("1").unwrap(),
+                Decimal::from_str("2").unwrap(),
+                Decimal::from_str("5").unwrap(),
+            ],
+            live_round_max: 5,
+            burn_rate: Decimal::from_str("0.5").unwrap(),
+            cw20_contract_address: "LOTA".to_string(),
+        };
+
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
+        let res = instantiate(deps, env, mock_info("creator", &[]), msg).unwrap();
+        assert_eq!(0, res.messages.len());
+    }
+
+    fn custom_init_prize_three_balls(deps: DepsMut) {
+        let msg = InstantiateMsg {
+            denom: "uusd".to_string(),
+            frequency: 300,
+            fee_collector: Decimal::from_str("0.05").unwrap(),
+            fee_collector_address: "STAKING".to_string(),
+            fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
+            terrand_address: "TERRAND".to_string(),
+            set_of_balls: 3,
             range_min: 1,
             range_max: 16,
             bonus_set_of_balls: 1,
@@ -1917,6 +1971,132 @@ mod tests {
         // 1 number
         let msg = ReceiveMsg::Register {
             numbers: vec![4, 1, 1, 1, 3],
+            multiplier: Uint128::from(2_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(2_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(DRAND_GENESIS_TIME);
+        env.block.time = env.block.time.plus_seconds(300);
+        let msg = ExecuteMsg::Draw {};
+        let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
+
+        let msg = ExecuteMsg::Collect {
+            round: 0,
+            player: "alice".to_string(),
+            game_id: vec![0],
+        };
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("alice", &[]),
+            msg.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 0);
+
+        let msg = ExecuteMsg::Collect {
+            round: 0,
+            player: "alice".to_string(),
+            game_id: vec![1],
+        };
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("alice", &[]),
+            msg.clone(),
+        )
+        .unwrap();
+
+        let cw20_msg_payout = Cw20ExecuteMsg::Transfer {
+            recipient: "alice".to_string(),
+            amount: Uint128::from(4_400_000u128),
+        };
+        let msg_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_payout).unwrap(),
+            funds: vec![],
+        });
+
+        let cw20_msg_fee_collector = Cw20ExecuteMsg::Transfer {
+            recipient: "STAKING".to_string(),
+            amount: Uint128::from(500_000u128),
+        };
+        let msg_fee_collector = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_collector).unwrap(),
+            funds: vec![],
+        });
+
+        let cw20_msg_fee_worker = Cw20ExecuteMsg::Transfer {
+            recipient: "worker".to_string(),
+            amount: Uint128::from(100_000u128),
+        };
+        let msg_fee_worker = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_worker).unwrap(),
+            funds: vec![],
+        });
+
+        let cw20_msg_burn = Cw20ExecuteMsg::Burn {
+            amount: Uint128::from(5_000_000u128),
+        };
+        let msg_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_burn).unwrap(),
+            funds: vec![],
+        });
+
+        assert_eq!(
+            res.messages,
+            vec![
+                SubMsg::new(msg_payout),
+                SubMsg::new(msg_fee_collector),
+                SubMsg::new(msg_fee_worker),
+                SubMsg::new(msg_burn)
+            ]
+        );
+    }
+
+    #[test]
+    fn try_collect_on_custom_init_three_balls() {
+        let mut deps = custom_mock_dependencies(&[]);
+        custom_init_prize_three_balls(deps.as_mut());
+
+        // bonus not counting
+        let sender = mock_info(
+            "LOTA",
+            &[Coin {
+                denom: "uusd".to_string(),
+                amount: Uint128::from(2_000_000u128),
+            }],
+        );
+        let msg = ReceiveMsg::Register {
+            numbers: vec![1, 1, 1, 3],
+            multiplier: Uint128::from(2_000_000u128),
+            live_round: 1,
+            address: None,
+        };
+        let cw20_receive_msg = Cw20ReceiveMsg {
+            sender: "alice".to_string(),
+            amount: Uint128::from(2_000_000u128),
+            msg: to_binary(&msg).unwrap(),
+        };
+        let msg = ExecuteMsg::Receive(cw20_receive_msg);
+        let res = execute(deps.as_mut(), mock_env(), sender.clone(), msg).unwrap();
+
+        // 1 number
+        let msg = ReceiveMsg::Register {
+            numbers: vec![4, 1, 1, 3],
             multiplier: Uint128::from(2_000_000u128),
             live_round: 1,
             address: None,
