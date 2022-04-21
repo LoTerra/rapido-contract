@@ -162,6 +162,7 @@ pub fn try_receive(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn try_register(
     deps: DepsMut,
     env: Env,
@@ -242,7 +243,7 @@ pub fn try_register(
     //     return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
     // }
 
-    if &(new_arr_number.len() as u8) != &state.set_of_balls {
+    if new_arr_number.len() as u8 != state.set_of_balls {
         return Err(ContractError::OutOfRange {});
     }
 
