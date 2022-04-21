@@ -45,6 +45,9 @@ pub struct LotteryState {
     pub multiplier: Vec<Decimal>,
     pub winning_number: Option<Vec<u8>>,
     pub bonus_number: Option<u8>,
+    pub burn_rate: Decimal,
+    pub fee_collector: Decimal,
+    pub fee_collector_terrand: Decimal,
 }
 pub const LOTTERY_STATE: Map<&[u8], LotteryState> = Map::new("lottery_state");
 

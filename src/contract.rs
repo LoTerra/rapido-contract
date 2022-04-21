@@ -91,6 +91,9 @@ pub fn instantiate(
             multiplier: msg.multiplier,
             winning_number: None,
             bonus_number: None,
+            burn_rate: msg.burn_rate,
+            fee_collector: msg.fee_collector,
+            fee_collector_terrand: msg.fee_collector_terrand,
         },
     )?;
 
@@ -205,9 +208,10 @@ pub fn try_register(
         }
     };
 
-    let expected_amount = state.ticket_price[0]
+    let expected_amount = lottery.ticket_price[0]
         .mul(multiplier_decimal)
         .mul(Decimal::from_str(&live_round.to_string()).unwrap());
+
     if amount != expected_amount {
         return Err(ContractError::AmountSentError(amount, expected_amount));
     };
@@ -223,11 +227,16 @@ pub fn try_register(
     }
 
     new_arr_number.pop();
-    new_arr_number.sort();
-    new_arr_number.dedup();
-
-    if new_arr_number.len() as u8 != state.set_of_balls {
-        return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+    // new_arr_number.sort();
+    // new_arr_number.dedup();
+    //
+    // if new_arr_number.len() as u8 != state.set_of_balls {
+    //     return Err(ContractError::WrongSetOfBallsOrDuplicateNotAllowed {});
+    // }
+    if &(new_arr_number.len() as u8) > &state.range.max
+        || &(new_arr_number.len() as u8) < &state.range.min
+    {
+        return Err(ContractError::OutOfRange {});
     }
 
     for number in new_arr_number.clone() {
@@ -253,6 +262,7 @@ pub fn try_register(
                     numbers.clone(),
                     multiplier_decimal,
                     None,
+                    &state,
                 )?;
                 GAMES_STATS.save(
                     deps.storage,
@@ -323,6 +333,7 @@ pub fn try_register(
                     numbers.clone(),
                     multiplier_decimal,
                     Some(game_stats),
+                    &state,
                 )?;
 
                 GAMES_STATS.update(
@@ -483,6 +494,9 @@ pub fn try_draw(deps: DepsMut, env: Env, _info: MessageInfo) -> Result<Response,
             multiplier: state.multiplier,
             winning_number: None,
             bonus_number: None,
+            burn_rate: config.burn_rate,
+            fee_collector: config.fee_collector,
+            fee_collector_terrand: config.fee_collector_terrand,
         },
     )?;
 
@@ -530,13 +544,15 @@ pub fn try_collect(
             let bonus = lottery.bonus_number.unwrap() == game.bonus;
 
             let prize = match match_amount {
-                2 if bonus => lottery.prize_rank[0],
-                3 if !bonus => lottery.prize_rank[1],
-                3 if bonus => lottery.prize_rank[2],
-                4 if !bonus => lottery.prize_rank[3],
-                4 if bonus => lottery.prize_rank[4],
-                5 if !bonus => lottery.prize_rank[5],
-                5 if bonus => lottery.prize_rank[6],
+                0 if bonus => lottery.prize_rank[0],
+                1 if !bonus => lottery.prize_rank[1],
+                1 if bonus => lottery.prize_rank[2],
+                2 if !bonus => lottery.prize_rank[3],
+                2 if bonus => lottery.prize_rank[4],
+                3 if !bonus => lottery.prize_rank[5],
+                3 if bonus => lottery.prize_rank[6],
+                4 if !bonus => lottery.prize_rank[7],
+                4 if bonus => lottery.prize_rank[8],
                 _ => Uint128::zero(),
             };
 
@@ -566,9 +582,9 @@ pub fn try_collect(
             .api
             .addr_humanize(&config.cw20_contract_address)?
             .to_string();
-        let cw20_burn_amount = total_amount_to_send.mul(config.burn_rate);
-        let collector_tax_amount = total_amount_to_send.mul(config.fee_collector);
-        let terrand_tax_amount = total_amount_to_send.mul(config.fee_collector_terrand);
+        let cw20_burn_amount = total_amount_to_send.mul(lottery.burn_rate);
+        let collector_tax_amount = total_amount_to_send.mul(lottery.fee_collector);
+        let terrand_tax_amount = total_amount_to_send.mul(lottery.fee_collector_terrand);
 
         let execute_prize_payout = Cw20ExecuteMsg::Transfer {
             recipient: player,
@@ -863,7 +879,7 @@ mod tests {
             fee_collector_address: "STAKING".to_string(),
             fee_collector_terrand: Decimal::from_str("0.01").unwrap(),
             terrand_address: "TERRAND".to_string(),
-            set_of_balls: 5,
+            set_of_balls: 4,
             range_min: 1,
             range_max: 16,
             bonus_set_of_balls: 1,
@@ -1081,7 +1097,7 @@ mod tests {
                 Attribute::new("round", "[0]"),
                 Attribute::new("live_round", "1"),
                 Attribute::new("ticket_amount", "1"),
-                Attribute::new("sender", "alice"),
+                Attribute::new("sender", "LOTA"),
                 Attribute::new("recipient", "alice"),
             ]
         );
@@ -1111,7 +1127,7 @@ mod tests {
         assert_eq!(
             err,
             ContractError::AmountSentError(
-                Uint128::from(1_000_000u128),
+                Uint128::from(5_000_000u128),
                 Uint128::from(4_000_000u128)
             )
         );
@@ -1124,14 +1140,14 @@ mod tests {
         );
 
         let msg = ReceiveMsg::Register {
-            numbers: vec![1, 2, 17, 6, 12, 4],
+            numbers: vec![1, 2, 16, 6, 4],
             multiplier: Uint128::from(1_000_000u128),
             live_round: 4,
             address: None,
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "alice".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(4_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
@@ -1143,7 +1159,7 @@ mod tests {
                 Attribute::new("round", "[0, 1, 2, 3]"),
                 Attribute::new("live_round", "4"),
                 Attribute::new("ticket_amount", "1"),
-                Attribute::new("sender", "alice"),
+                Attribute::new("sender", "LOTA"),
                 Attribute::new("recipient", "alice"),
             ]
         );
@@ -1153,7 +1169,7 @@ mod tests {
             games,
             vec![
                 GameResponse {
-                    number: vec![1, 2, 17, 6, 12],
+                    number: vec![1, 2, 16, 6],
                     bonus: 4,
                     multiplier: Decimal::from_str("1").unwrap(),
                     resolved: false,
@@ -1161,7 +1177,7 @@ mod tests {
                     lottery_id: 0
                 },
                 GameResponse {
-                    number: vec![5, 7, 12, 15, 13],
+                    number: vec![5, 7, 12, 15],
                     bonus: 1,
                     multiplier: Decimal::from_str("5").unwrap(),
                     resolved: false,
@@ -1174,7 +1190,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![1, 2, 17, 6, 12],
+                number: vec![1, 2, 16, 6],
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
@@ -1186,7 +1202,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![1, 2, 17, 6, 12],
+                number: vec![1, 2, 16, 6],
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
@@ -1198,7 +1214,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![1, 2, 17, 6, 12],
+                number: vec![1, 2, 16, 6],
                 bonus: 4,
                 multiplier: Decimal::from_str("1").unwrap(),
                 resolved: false,
@@ -1208,13 +1224,7 @@ mod tests {
         );
 
         // Error sent
-        let sender = mock_info(
-            "LOTA",
-            &[Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(10_000_000u128),
-            }],
-        );
+        let sender = mock_info("LOTA", &[]);
         let msg = ReceiveMsg::Register {
             numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
@@ -1224,11 +1234,12 @@ mod tests {
 
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "bob".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(10_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
         let err = execute(deps.as_mut(), env.clone(), sender.clone(), msg).unwrap_err();
+
         assert_eq!(
             err,
             ContractError::AmountSentError(
@@ -1246,7 +1257,7 @@ mod tests {
             }],
         );
         let msg = ReceiveMsg::Register {
-            numbers: vec![5, 7, 12, 15, 13, 1],
+            numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 1,
             address: None,
@@ -1266,7 +1277,7 @@ mod tests {
                 Attribute::new("round", "[0]"),
                 Attribute::new("live_round", "1"),
                 Attribute::new("ticket_amount", "1"),
-                Attribute::new("sender", "bob"),
+                Attribute::new("sender", "LOTA"),
                 Attribute::new("recipient", "bob"),
             ]
         );
@@ -1275,7 +1286,7 @@ mod tests {
         assert_eq!(
             games,
             vec![GameResponse {
-                number: vec![5, 7, 12, 15, 13],
+                number: vec![5, 7, 12, 15],
                 bonus: 1,
                 multiplier: Decimal::from_str("5").unwrap(),
                 resolved: false,
@@ -1380,17 +1391,11 @@ mod tests {
         };
         let cw20_receive_msg = Cw20ReceiveMsg {
             sender: "alice".to_string(),
-            amount: Uint128::from(5_000_000u128),
+            amount: Uint128::from(10_000_000u128),
             msg: to_binary(&msg).unwrap(),
         };
         let msg = ExecuteMsg::Receive(cw20_receive_msg);
-        let sender = mock_info(
-            "bob",
-            &[Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(10_000_000u128),
-            }],
-        );
+        let sender = mock_info("LOTA", &[]);
 
         let res = execute(deps.as_mut(), env.clone(), sender, msg.clone()).unwrap();
         let sender = mock_info(
@@ -1405,11 +1410,12 @@ mod tests {
         env.block.time = env.block.time.plus_seconds(300);
         let msg = ExecuteMsg::Draw {};
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let worker_msg = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "worker".to_string(),
-            amount: vec![Coin::new(990_099, "uusd")],
-        });
-        assert_eq!(res.messages, vec![SubMsg::new(worker_msg)]);
+        // let worker_msg = CosmosMsg::Bank(BankMsg::Send {
+        //     to_address: "worker".to_string(),
+        //     amount: vec![Coin::new(990_099, "uusd")],
+        // });
+        // assert_eq!(res.messages, vec![SubMsg::new(worker_msg)]);
+        assert_eq!(res.messages, vec![]);
 
         let lottery_stats = query_lottery_stats(deps.as_ref(), 1).unwrap();
         println!("{:?}", lottery_stats);
@@ -1432,7 +1438,7 @@ mod tests {
 
         let sender = mock_info("LOTA", &[]);
         let msg = ReceiveMsg::Register {
-            numbers: vec![5, 7, 12, 15, 16, 1],
+            numbers: vec![5, 7, 12, 15, 1],
             multiplier: Uint128::from(5_000_000u128),
             live_round: 2,
             address: None,
@@ -1588,33 +1594,52 @@ mod tests {
             msg.clone(),
         )
         .unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "alice".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(18_799_000_000u128),
-            }],
+        let cw20_msg_payout = Cw20ExecuteMsg::Transfer {
+            recipient: "alice".to_string(),
+            amount: Uint128::from(136_400_000u128),
+        };
+        let msg_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_payout).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "STAKING".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(999_000_000u128),
-            }],
+
+        let cw20_msg_fee_collector = Cw20ExecuteMsg::Transfer {
+            recipient: "STAKING".to_string(),
+            amount: Uint128::from(15_500_000u128),
+        };
+        let msg_fee_collector = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_collector).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "worker".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(199_000_000u128),
-            }],
+
+        let cw20_msg_fee_worker = Cw20ExecuteMsg::Transfer {
+            recipient: "worker".to_string(),
+            amount: Uint128::from(3_100_000u128),
+        };
+        let msg_fee_worker = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_worker).unwrap(),
+            funds: vec![],
         });
+
+        let cw20_msg_burn = Cw20ExecuteMsg::Burn {
+            amount: Uint128::from(155_000_000u128),
+        };
+        let msg_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_burn).unwrap(),
+            funds: vec![],
+        });
+
         assert_eq!(
             res.messages,
             vec![
                 SubMsg::new(msg_payout),
                 SubMsg::new(msg_fee_collector),
-                SubMsg::new(msg_fee_worker)
+                SubMsg::new(msg_fee_worker),
+                SubMsg::new(msg_burn)
             ]
         );
         // Collect again error with no prize
@@ -1627,33 +1652,52 @@ mod tests {
             game_id: vec![0],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "bob".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(281_000_000u128),
-            }],
+
+        let cw20_msg_payout = Cw20ExecuteMsg::Transfer {
+            recipient: "bob".to_string(),
+            amount: Uint128::from(132_000_000u128),
+        };
+        let msg_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_payout).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "STAKING".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(14_851_485u128),
-            }],
+
+        let cw20_msg_fee_collector = Cw20ExecuteMsg::Transfer {
+            recipient: "STAKING".to_string(),
+            amount: Uint128::from(15_000_000u128),
+        };
+        let msg_fee_collector = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_collector).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "worker".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(2_970_297u128),
-            }],
+
+        let cw20_msg_fee_worker = Cw20ExecuteMsg::Transfer {
+            recipient: "worker".to_string(),
+            amount: Uint128::from(3_000_000u128),
+        };
+        let msg_fee_worker = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_worker).unwrap(),
+            funds: vec![],
+        });
+
+        let cw20_msg_burn = Cw20ExecuteMsg::Burn {
+            amount: Uint128::from(150_000_000u128),
+        };
+        let msg_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_burn).unwrap(),
+            funds: vec![],
         });
         assert_eq!(
             res.messages,
             vec![
                 SubMsg::new(msg_payout),
                 SubMsg::new(msg_fee_collector),
-                SubMsg::new(msg_fee_worker)
+                SubMsg::new(msg_fee_worker),
+                SubMsg::new(msg_burn)
             ]
         );
 
@@ -1663,33 +1707,53 @@ mod tests {
             game_id: vec![0],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "charlie".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(93_069_306u128),
-            }],
+
+        let cw20_msg_payout = Cw20ExecuteMsg::Transfer {
+            recipient: "charlie".to_string(),
+            amount: Uint128::from(44_000_000u128),
+        };
+        let msg_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_payout).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "STAKING".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(4_950_495u128),
-            }],
+
+        let cw20_msg_fee_collector = Cw20ExecuteMsg::Transfer {
+            recipient: "STAKING".to_string(),
+            amount: Uint128::from(5_000_000u128),
+        };
+        let msg_fee_collector = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_collector).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "worker".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(990_099u128),
-            }],
+
+        let cw20_msg_fee_worker = Cw20ExecuteMsg::Transfer {
+            recipient: "worker".to_string(),
+            amount: Uint128::from(1_000_000u128),
+        };
+        let msg_fee_worker = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_worker).unwrap(),
+            funds: vec![],
         });
+
+        let cw20_msg_burn = Cw20ExecuteMsg::Burn {
+            amount: Uint128::from(50_000_000u128),
+        };
+        let msg_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_burn).unwrap(),
+            funds: vec![],
+        });
+
         assert_eq!(
             res.messages,
             vec![
                 SubMsg::new(msg_payout),
                 SubMsg::new(msg_fee_collector),
-                SubMsg::new(msg_fee_worker)
+                SubMsg::new(msg_fee_worker),
+                SubMsg::new(msg_burn)
             ]
         );
 
@@ -1700,33 +1764,52 @@ mod tests {
             game_id: vec![0],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "mario".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(930_693u128),
-            }],
+
+        let cw20_msg_payout = Cw20ExecuteMsg::Transfer {
+            recipient: "mario".to_string(),
+            amount: Uint128::from(2_200_000u128),
+        };
+        let msg_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_payout).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "STAKING".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(49_504u128),
-            }],
+
+        let cw20_msg_fee_collector = Cw20ExecuteMsg::Transfer {
+            recipient: "STAKING".to_string(),
+            amount: Uint128::from(250_000u128),
+        };
+        let msg_fee_collector = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_collector).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "worker".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(9_900u128),
-            }],
+
+        let cw20_msg_fee_worker = Cw20ExecuteMsg::Transfer {
+            recipient: "worker".to_string(),
+            amount: Uint128::from(50_000u128),
+        };
+        let msg_fee_worker = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_worker).unwrap(),
+            funds: vec![],
+        });
+
+        let cw20_msg_burn = Cw20ExecuteMsg::Burn {
+            amount: Uint128::from(2_500_000u128),
+        };
+        let msg_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_burn).unwrap(),
+            funds: vec![],
         });
         assert_eq!(
             res.messages,
             vec![
                 SubMsg::new(msg_payout),
                 SubMsg::new(msg_fee_collector),
-                SubMsg::new(msg_fee_worker)
+                SubMsg::new(msg_fee_worker),
+                SubMsg::new(msg_burn)
             ]
         );
         // Win 2UST
@@ -1736,33 +1819,52 @@ mod tests {
             game_id: vec![1],
         };
         let res = execute(deps.as_mut(), env.clone(), mock_info("alice", &[]), msg).unwrap();
-        let msg_payout = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "mario".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(1_861_386u128),
-            }],
+
+        let cw20_msg_payout = Cw20ExecuteMsg::Transfer {
+            recipient: "mario".to_string(),
+            amount: Uint128::from(880_000u128),
+        };
+        let msg_payout = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_payout).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_collector = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "STAKING".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(99_009u128),
-            }],
+
+        let cw20_msg_fee_collector = Cw20ExecuteMsg::Transfer {
+            recipient: "STAKING".to_string(),
+            amount: Uint128::from(100_000u128),
+        };
+        let msg_fee_collector = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_collector).unwrap(),
+            funds: vec![],
         });
-        let msg_fee_worker = CosmosMsg::Bank(BankMsg::Send {
-            to_address: "worker".to_string(),
-            amount: vec![Coin {
-                denom: "uusd".to_string(),
-                amount: Uint128::from(19_801u128),
-            }],
+
+        let cw20_msg_fee_worker = Cw20ExecuteMsg::Transfer {
+            recipient: "worker".to_string(),
+            amount: Uint128::from(20_000u128),
+        };
+        let msg_fee_worker = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_fee_worker).unwrap(),
+            funds: vec![],
+        });
+
+        let cw20_msg_burn = Cw20ExecuteMsg::Burn {
+            amount: Uint128::from(1_000_000u128),
+        };
+        let msg_burn = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: "LOTA".to_string(),
+            msg: to_binary(&cw20_msg_burn).unwrap(),
+            funds: vec![],
         });
         assert_eq!(
             res.messages,
             vec![
                 SubMsg::new(msg_payout),
                 SubMsg::new(msg_fee_collector),
-                SubMsg::new(msg_fee_worker)
+                SubMsg::new(msg_fee_worker),
+                SubMsg::new(msg_burn)
             ]
         );
 

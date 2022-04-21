@@ -1,4 +1,4 @@
-use crate::state::{Game, GameStats, GAMES};
+use crate::state::{Game, GameStats, State, GAMES};
 use crate::ContractError;
 use cosmwasm_std::{CanonicalAddr, Decimal, Storage};
 
@@ -49,7 +49,9 @@ pub fn winning_number(number: Vec<char>, set_of_balls: u8) -> Result<Vec<u8>, Co
             _ => return Err(ContractError::Unauthorized {}),
         };
 
-        if !winning_number.contains(&number) && winning_number.len() != set_of_balls as usize {
+        if
+        /* !winning_number.contains(&number) &&*/
+        winning_number.len() != set_of_balls as usize {
             winning_number.push(number);
         }
     }
@@ -94,11 +96,18 @@ pub fn save_game(
     numbers: Vec<u8>,
     multiplier: Decimal,
     game: Option<GameStats>,
+    state: &State,
 ) -> Result<(), ContractError> {
     let stats = match game {
         None => 0,
         Some(game_stats) => game_stats.total_ticket,
     };
+
+    let mut number = vec![];
+    for x in 0..state.set_of_balls {
+        number.push(numbers[x as usize])
+    }
+    let bonus = numbers.clone().pop().unwrap();
 
     // for number in numbers {
     GAMES.save(
@@ -109,8 +118,8 @@ pub fn save_game(
             &stats.to_be_bytes(),
         ),
         &Game {
-            number: vec![numbers[0], numbers[1], numbers[2], numbers[3], numbers[4]],
-            bonus: numbers[5],
+            number,
+            bonus,
             multiplier,
             resolved: false,
         },
