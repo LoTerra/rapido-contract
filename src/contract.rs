@@ -53,7 +53,7 @@ pub fn instantiate(
         return Err(ContractError::OutOfRange {});
     }
     // Handle bonus set of ball is in the allowed range
-    if msg.bonus_set_of_balls > 1 || msg.bonus_set_of_balls < 1 {
+    if msg.bonus_set_of_balls != 1 {
         return Err(ContractError::BonusOutOfRange {});
     }
 
@@ -269,7 +269,6 @@ pub fn try_register(
                     numbers.clone(),
                     multiplier_decimal,
                     None,
-                    &state,
                 )?;
                 GAMES_STATS.save(
                     deps.storage,
@@ -340,7 +339,6 @@ pub fn try_register(
                     numbers.clone(),
                     multiplier_decimal,
                     Some(game_stats),
-                    &state,
                 )?;
 
                 GAMES_STATS.update(

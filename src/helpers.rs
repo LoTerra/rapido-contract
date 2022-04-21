@@ -1,4 +1,4 @@
-use crate::state::{Game, GameStats, State, GAMES};
+use crate::state::{Game, GameStats, GAMES};
 use crate::ContractError;
 use cosmwasm_std::{CanonicalAddr, Decimal, Storage};
 
@@ -93,21 +93,20 @@ pub fn save_game(
     storage: &mut dyn Storage,
     round: u64,
     address_raw: &CanonicalAddr,
-    numbers: Vec<u8>,
+    mut numbers: Vec<u8>,
     multiplier: Decimal,
     game: Option<GameStats>,
-    state: &State,
 ) -> Result<(), ContractError> {
     let stats = match game {
         None => 0,
         Some(game_stats) => game_stats.total_ticket,
     };
 
-    let mut number = vec![];
-    for x in 0..state.set_of_balls {
-        number.push(numbers[x as usize])
-    }
-    let bonus = numbers.clone().pop().unwrap();
+    // let mut number = vec![];
+    // for x in 0..state.set_of_balls {
+    //     number.push(numbers[x as usize])
+    // }
+    let bonus = numbers.pop().unwrap();
 
     // for number in numbers {
     GAMES.save(
@@ -118,7 +117,7 @@ pub fn save_game(
             &stats.to_be_bytes(),
         ),
         &Game {
-            number,
+            number: numbers,
             bonus,
             multiplier,
             resolved: false,
@@ -131,15 +130,19 @@ pub fn save_game(
 
 pub fn count_match(game: &[u8], lottery: &[u8], set_of_balls: u8) -> u8 {
     let mut count = 0;
-
-    for i in 0..set_of_balls as usize {
-        if lottery.contains(&game[i]) {
+    for i in game.iter().take(set_of_balls as usize) {
+        if lottery.contains(i) {
             count += 1
         }
-        // if game[i] == lottery[i] {
-        //     count += 1
-        // }
     }
+    // for i in 0..set_of_balls as usize {
+    //     if lottery.contains(&game[i]) {
+    //         count += 1
+    //     }
+    //     // if game[i] == lottery[i] {
+    //     //     count += 1
+    //     // }
+    // }
 
     count
 }
