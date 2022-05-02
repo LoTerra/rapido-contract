@@ -9,13 +9,12 @@ use cw_storage_plus::Bound;
 use std::convert::TryInto;
 use std::ops::Mul;
 use std::str::FromStr;
-use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
-    LotteryStatsResponse, QueryMsg, ReceiveMsg, StateResponse,
+    LotteryStatsResponse, MigrateMsg, QueryMsg, ReceiveMsg, StateResponse,
 };
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
@@ -849,9 +848,10 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    //let mut config = CONFIG.load(deps.storage)?;
-    //config.fee_collector = Decimal::from_str("0.1").unwrap();
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
+    let mut config = CONFIG.load(deps.storage)?;
+    config.fee_collector_address = deps.api.addr_canonicalize(&msg.new_collector_address)?;
+    CONFIG.save(deps.storage, &config)?;
     //let mut state = STATE.load(deps.storage)?;
     // state.prize_rank = vec![
     //     Uint128::from(2_000_000u128),

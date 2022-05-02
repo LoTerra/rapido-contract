@@ -146,4 +146,6 @@ pub struct LotteryStatsResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub new_collector_address: String,
+}
