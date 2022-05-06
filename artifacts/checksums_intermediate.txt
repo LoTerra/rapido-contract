@@ -1,1 +1,1 @@
-3e3fea031b0d3287a82974b1b7037c1e1eb1f9bc78b8b02c7e39e9e3607b24e6  ./target/wasm32-unknown-unknown/release/loterra_v2.wasm
+805f2fb75efe07511607933cbb51d945cdf463dd6385746a81ab7026bbb870d3  ./target/wasm32-unknown-unknown/release/loterra_v2.wasm

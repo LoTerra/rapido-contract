@@ -136,4 +136,15 @@ pub struct LotteryStatsResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub update_denom: String,
+    pub update_frequency: u64,
+    pub update_fee_collector: Decimal,
+    pub update_fee_collector_address: String,
+    pub update_fee_collector_terrand: Decimal,
+    pub update_terrand_address: String,
+    pub update_prize_rank: Vec<Uint128>,
+    pub update_ticket_price: Vec<Uint128>,
+    pub update_multiplier: Vec<Decimal>,
+    pub update_live_round_max: u16,
+}

@@ -9,13 +9,12 @@ use cw_storage_plus::Bound;
 use std::convert::TryInto;
 use std::ops::Mul;
 use std::str::FromStr;
-use terrand::msg::MigrateMsg;
 
 use crate::error::ContractError;
 use crate::helpers::{bonus_number, count_match, save_game, winning_number};
 use crate::msg::{
     ConfigResponse, ExecuteMsg, GameResponse, GameStatsResponse, InstantiateMsg, LotteryResponse,
-    LotteryStatsResponse, QueryMsg, StateResponse,
+    LotteryStatsResponse, MigrateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{
     BallsRange, Config, GameStats, LotteryState, LotteryStats, State, CONFIG, GAMES, GAMES_STATS,
@@ -808,25 +807,26 @@ fn query_lottery_stats(deps: Deps, round: u64) -> StdResult<LotteryStatsResponse
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
     let mut config = CONFIG.load(deps.storage)?;
-    let human_addr = Addr::unchecked("terra163gjynvzdrvlfcs42s269uhaa5q4hpa0cgh0vq");
-    config.fee_collector_address = deps.api.addr_canonicalize(human_addr.as_str())?;
+    let mut state = STATE.load(deps.storage)?;
+
+    config.fee_collector_address = deps
+        .api
+        .addr_canonicalize(&msg.update_fee_collector_address)?;
+    config.terrand_address = deps.api.addr_canonicalize(&msg.update_terrand_address)?;
+    config.denom = msg.update_denom;
+    config.fee_collector = msg.update_fee_collector;
+    config.frequency = msg.update_frequency;
+    config.fee_collector_terrand = msg.update_fee_collector_terrand;
+    config.live_round_max = msg.update_live_round_max;
     CONFIG.save(deps.storage, &config)?;
-    //config.fee_collector = Decimal::from_str("0.1").unwrap();
-    //let mut state = STATE.load(deps.storage)?;
-    // state.prize_rank = vec![
-    //     Uint128::from(2_000_000u128),
-    //     Uint128::from(1_000_000u128),
-    //     Uint128::from(5_000_000u128),
-    //     Uint128::from(10_000_000u128),
-    //     Uint128::from(30_000_000u128),
-    //     Uint128::from(50_000_000u128),
-    //     Uint128::from(150_000_000u128),
-    //     Uint128::from(1_000_000_000u128),
-    //     Uint128::from(10_000_000_000u128),
-    // ];
-    // STATE.save(deps.storage, &state)?;
+
+    state.ticket_price = msg.update_ticket_price;
+    state.prize_rank = msg.update_prize_rank;
+    state.multiplier = msg.update_multiplier;
+    STATE.save(deps.storage, &state)?;
+
     Ok(Response::default())
 }
 
